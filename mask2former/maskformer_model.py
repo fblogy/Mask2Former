@@ -138,26 +138,38 @@ class MaskFormer(nn.Module):
         )
 
         return {
-            "backbone": backbone,
-            "sem_seg_head": sem_seg_head,
-            "criterion": criterion,
-            "num_queries": cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES,
-            "object_mask_threshold": cfg.MODEL.MASK_FORMER.TEST.OBJECT_MASK_THRESHOLD,
-            "overlap_threshold": cfg.MODEL.MASK_FORMER.TEST.OVERLAP_THRESHOLD,
-            "metadata": MetadataCatalog.get(cfg.DATASETS.TRAIN[0]),
-            "size_divisibility": cfg.MODEL.MASK_FORMER.SIZE_DIVISIBILITY,
-            "sem_seg_postprocess_before_inference": (
-                cfg.MODEL.MASK_FORMER.TEST.SEM_SEG_POSTPROCESSING_BEFORE_INFERENCE
-                or cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON
-                or cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON
-            ),
-            "pixel_mean": cfg.MODEL.PIXEL_MEAN,
-            "pixel_std": cfg.MODEL.PIXEL_STD,
+            "backbone":
+            backbone,
+            "sem_seg_head":
+            sem_seg_head,
+            "criterion":
+            criterion,
+            "num_queries":
+            cfg.MODEL.MASK_FORMER.NUM_OBJECT_QUERIES,
+            "object_mask_threshold":
+            cfg.MODEL.MASK_FORMER.TEST.OBJECT_MASK_THRESHOLD,
+            "overlap_threshold":
+            cfg.MODEL.MASK_FORMER.TEST.OVERLAP_THRESHOLD,
+            "metadata":
+            MetadataCatalog.get(cfg.DATASETS.TRAIN[0]),
+            "size_divisibility":
+            cfg.MODEL.MASK_FORMER.SIZE_DIVISIBILITY,
+            "sem_seg_postprocess_before_inference":
+            (cfg.MODEL.MASK_FORMER.TEST.SEM_SEG_POSTPROCESSING_BEFORE_INFERENCE
+             or cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON or cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON),
+            "pixel_mean":
+            cfg.MODEL.PIXEL_MEAN,
+            "pixel_std":
+            cfg.MODEL.PIXEL_STD,
             # inference
-            "semantic_on": cfg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON,
-            "instance_on": cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON,
-            "panoptic_on": cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON,
-            "test_topk_per_image": cfg.TEST.DETECTIONS_PER_IMAGE,
+            "semantic_on":
+            cfg.MODEL.MASK_FORMER.TEST.SEMANTIC_ON,
+            "instance_on":
+            cfg.MODEL.MASK_FORMER.TEST.INSTANCE_ON,
+            "panoptic_on":
+            cfg.MODEL.MASK_FORMER.TEST.PANOPTIC_ON,
+            "test_topk_per_image":
+            cfg.TEST.DETECTIONS_PER_IMAGE,
         }
 
     @property
@@ -230,16 +242,14 @@ class MaskFormer(nn.Module):
 
             processed_results = []
             for mask_cls_result, mask_pred_result, input_per_image, image_size in zip(
-                mask_cls_results, mask_pred_results, batched_inputs, images.image_sizes
-            ):
+                    mask_cls_results, mask_pred_results, batched_inputs, images.image_sizes):
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
                 processed_results.append({})
 
                 if self.sem_seg_postprocess_before_inference:
-                    mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(
-                        mask_pred_result, image_size, height, width
-                    )
+                    mask_pred_result = retry_if_cuda_oom(sem_seg_postprocess)(mask_pred_result, image_size, height,
+                                                                              width)
                     mask_cls_result = mask_cls_result.to(mask_pred_result)
 
                 # semantic segmentation inference
@@ -253,7 +263,7 @@ class MaskFormer(nn.Module):
                 if self.panoptic_on:
                     panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                     processed_results[-1]["panoptic_seg"] = panoptic_r
-                
+
                 # instance segmentation inference
                 if self.instance_on:
                     instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result)
@@ -268,13 +278,11 @@ class MaskFormer(nn.Module):
             # pad gt
             gt_masks = targets_per_image.gt_masks
             padded_masks = torch.zeros((gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device)
-            padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
-            new_targets.append(
-                {
-                    "labels": targets_per_image.gt_classes,
-                    "masks": padded_masks,
-                }
-            )
+            padded_masks[:, :gt_masks.shape[1], :gt_masks.shape[2]] = gt_masks
+            new_targets.append({
+                "labels": targets_per_image.gt_classes,
+                "masks": padded_masks,
+            })
         return new_targets
 
     def semantic_inference(self, mask_cls, mask_pred):
@@ -331,13 +339,11 @@ class MaskFormer(nn.Module):
                     current_segment_id += 1
                     panoptic_seg[mask] = current_segment_id
 
-                    segments_info.append(
-                        {
-                            "id": current_segment_id,
-                            "isthing": bool(isthing),
-                            "category_id": int(pred_class),
-                        }
-                    )
+                    segments_info.append({
+                        "id": current_segment_id,
+                        "isthing": bool(isthing),
+                        "category_id": int(pred_class),
+                    })
 
             return panoptic_seg, segments_info
 
@@ -347,7 +353,8 @@ class MaskFormer(nn.Module):
 
         # [Q, K]
         scores = F.softmax(mask_cls, dim=-1)[:, :-1]
-        labels = torch.arange(self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
+        labels = torch.arange(
+            self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
         # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
         scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
         labels_per_image = labels[topk_indices]
@@ -374,7 +381,8 @@ class MaskFormer(nn.Module):
         # result.pred_boxes = BitMasks(mask_pred > 0).get_bounding_boxes()
 
         # calculate average mask prob
-        mask_scores_per_image = (mask_pred.sigmoid().flatten(1) * result.pred_masks.flatten(1)).sum(1) / (result.pred_masks.flatten(1).sum(1) + 1e-6)
+        mask_scores_per_image = (mask_pred.sigmoid().flatten(1) * result.pred_masks.flatten(1)).sum(1) / (
+            result.pred_masks.flatten(1).sum(1) + 1e-6)
         result.scores = scores_per_image * mask_scores_per_image
         result.pred_classes = labels_per_image
         return result

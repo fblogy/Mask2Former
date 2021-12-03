@@ -12,7 +12,6 @@ from detectron2.utils.registry import Registry
 from .position_encoding import PositionEmbeddingSine
 from .transformer import Transformer
 
-
 TRANSFORMER_DECODER_REGISTRY = Registry("TRANSFORMER_MODULE")
 TRANSFORMER_DECODER_REGISTRY.__doc__ = """
 Registry for transformer module in MaskFormer.
@@ -29,6 +28,7 @@ def build_transformer_decoder(cfg, in_channels, mask_classification=True):
 
 @TRANSFORMER_DECODER_REGISTRY.register()
 class StandardTransformerDecoder(nn.Module):
+
     @configurable
     def __init__(
         self,
@@ -146,9 +146,8 @@ class StandardTransformerDecoder(nn.Module):
             mask_embed = self.mask_embed(hs)
             outputs_seg_masks = torch.einsum("lbqc,bchw->lbqhw", mask_embed, mask_features)
             out["pred_masks"] = outputs_seg_masks[-1]
-            out["aux_outputs"] = self._set_aux_loss(
-                outputs_class if self.mask_classification else None, outputs_seg_masks
-            )
+            out["aux_outputs"] = self._set_aux_loss(outputs_class if self.mask_classification else None,
+                                                    outputs_seg_masks)
         else:
             # FIXME h_boxes takes the last one computed, keep this in mind
             # [bs, queries, embed]
@@ -163,10 +162,7 @@ class StandardTransformerDecoder(nn.Module):
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
         if self.mask_classification:
-            return [
-                {"pred_logits": a, "pred_masks": b}
-                for a, b in zip(outputs_class[:-1], outputs_seg_masks[:-1])
-            ]
+            return [{"pred_logits": a, "pred_masks": b} for a, b in zip(outputs_class[:-1], outputs_seg_masks[:-1])]
         else:
             return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
 
@@ -178,9 +174,7 @@ class MLP(nn.Module):
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
-        self.layers = nn.ModuleList(
-            nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
-        )
+        self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
