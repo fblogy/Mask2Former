@@ -31,8 +31,6 @@ SOLVER:
     CLIP_TYPE: "full_model"
     CLIP_VALUE: 0.01
     NORM_TYPE: 2.0
-  AMP:
-    ENABLED: True
 INPUT:
   MIN_SIZE_TRAIN: !!python/object/apply:eval ["[int(x * 0.1 * 1024) for x in range(5, 21)]"]
   MIN_SIZE_TRAIN_SAMPLING: "choice"
