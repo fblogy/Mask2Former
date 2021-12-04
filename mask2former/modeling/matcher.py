@@ -111,8 +111,8 @@ class HungarianMatcher(nn.Module):
             # get gt labels
 
             # XXX: This may be hacky. The source of float16 need to be checked.
-            out_mask = out_mask.float()
-            tgt_mask = tgt_mask.float()
+            # out_mask = out_mask.float()
+            # tgt_mask = tgt_mask.float()
             tgt_mask = point_sample(
                 tgt_mask,
                 point_coords.repeat(tgt_mask.shape[0], 1, 1),
