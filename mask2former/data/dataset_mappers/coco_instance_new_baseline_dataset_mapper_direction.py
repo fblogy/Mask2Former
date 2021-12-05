@@ -235,9 +235,8 @@ class COCOInstanceNewBaselineDatasetMapperDirection:
                 gt_masks = instances.gt_masks
                 gt_masks = convert_coco_poly_to_mask(gt_masks.polygons, h, w)
                 instances.gt_masks = gt_masks
+
             gt_masks = instances.gt_masks.numpy()
-            gt_sins, gt_coss, gt_dists = label_encoding(
-                gt_masks, output_stride=self.output_stride, dis_label_rev=self.dis_label_rev)
             if gt_masks.shape[0] == 0:
                 sub_h = math.ceil(image_shape[0] / self.output_stride)
                 sub_w = math.ceil(image_shape[1] / self.output_stride)
@@ -246,6 +245,8 @@ class COCOInstanceNewBaselineDatasetMapperDirection:
                 instances.gt_coss = torch.zeros((0, sub_h, sub_w))
                 instances.gt_dists = torch.zeros((0, sub_h, sub_w))
             else:
+                gt_sins, gt_coss, gt_dists = label_encoding(
+                    gt_masks, output_stride=self.output_stride, dis_label_rev=self.dis_label_rev)
                 instances.gt_sins = torch.tensor(gt_sins)
                 instances.gt_coss = torch.tensor(gt_coss)
                 instances.gt_dists = torch.tensor(gt_dists)

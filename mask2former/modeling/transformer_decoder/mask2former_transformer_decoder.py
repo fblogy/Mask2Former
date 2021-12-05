@@ -209,7 +209,7 @@ class MLP(nn.Module):
 
 
 @TRANSFORMER_DECODER_REGISTRY.register()
-class MultiScaleMaskedTransformerDecoder(nn.Module):
+class MultiScaleTransformerDecoder(nn.Module):
 
     _version = 2
 
@@ -431,16 +431,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         mask_embed = self.mask_embed(decoder_output)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
-        # NOTE: prediction is of higher-resolution
-        # [B, Q, H, W] -> [B, Q, H*W] -> [B, h, Q, H*W] -> [B*h, Q, HW]
-        attn_mask = F.interpolate(outputs_mask, size=attn_mask_target_size, mode="bilinear", align_corners=False)
-        # must use bool type
-        # If a BoolTensor is provided, positions with ``True`` are not allowed to attend while ``False`` values will be unchanged.
-        attn_mask = (attn_mask.sigmoid().flatten(2).unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1) <
-                     0.5).bool()
-        attn_mask = attn_mask.detach()
-
-        return outputs_class, outputs_mask, attn_mask
+        return outputs_class, outputs_mask, None
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_seg_masks):
@@ -451,3 +442,28 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
             return [{"pred_logits": a, "pred_masks": b} for a, b in zip(outputs_class[:-1], outputs_seg_masks[:-1])]
         else:
             return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
+
+
+@TRANSFORMER_DECODER_REGISTRY.register()
+class MultiScaleMaskedTransformerDecoder(MultiScaleTransformerDecoder):
+
+    def __init__(self, *args, **kwargs):
+        super.__init__(*args, **kwargs)
+
+    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
+        decoder_output = self.decoder_norm(output)
+        decoder_output = decoder_output.transpose(0, 1)
+        outputs_class = self.class_embed(decoder_output)
+        mask_embed = self.mask_embed(decoder_output)
+        outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
+
+        # NOTE: prediction is of higher-resolution
+        # [B, Q, H, W] -> [B, Q, H*W] -> [B, h, Q, H*W] -> [B*h, Q, HW]
+        attn_mask = F.interpolate(outputs_mask, size=attn_mask_target_size, mode="bilinear", align_corners=False)
+        # must use bool type
+        # If a BoolTensor is provided, positions with ``True`` are not allowed to attend while ``False`` values will be unchanged.
+        attn_mask = (attn_mask.sigmoid().flatten(2).unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1) <
+                     0.5).bool()
+        attn_mask = attn_mask.detach()
+
+        return outputs_class, outputs_mask, attn_mask
