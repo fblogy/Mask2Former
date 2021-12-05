@@ -434,6 +434,7 @@ class MultiScaleZigZagTransformerDecoder(nn.Module):
         }
         return out
 
+    # TODO: Fix zigzag broken forward when AMPTrainer is set.
     def zigzag(self, pixel_embeddings, mask, query_embedding):
         mask = mask.sigmoid()
         mask = mask > 0.5
@@ -678,6 +679,7 @@ class MultiScaleZigZagInTransformerDecoder(nn.Module):
         }
         return out
 
+    # TODO: Fix zigzag broken forward when AMPTrainer is set.
     def zigzag(self, pixel_embeddings, mask, query_embedding):
         mask = mask.sigmoid()
         mask = mask > 0.5

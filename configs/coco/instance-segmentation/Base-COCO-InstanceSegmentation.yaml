@@ -31,6 +31,8 @@ SOLVER:
     CLIP_TYPE: "full_model"
     CLIP_VALUE: 0.01
     NORM_TYPE: 2.0
+  AMP:
+    ENABLED: True
 INPUT:
   IMAGE_SIZE: 1024
   MIN_SCALE: 0.1
