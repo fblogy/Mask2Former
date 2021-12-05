@@ -46,6 +46,7 @@ from mask2former import (
     COCOPanopticNewBaselineDatasetMapper,
     InstanceSegEvaluator,
     MaskFormerInstanceDatasetMapper,
+    MaskFormerInstanceDatasetMapperDirection,
     MaskFormerPanopticDatasetMapper,
     MaskFormerSemanticDatasetMapper,
     SemanticSegmentorWithTTA,
@@ -144,6 +145,10 @@ class Trainer(DefaultTrainer):
         # Instance segmentation dataset mapper
         elif cfg.INPUT.DATASET_MAPPER_NAME == "mask_former_instance":
             mapper = MaskFormerInstanceDatasetMapper(cfg, True)
+            return build_detection_train_loader(cfg, mapper=mapper)
+        # Instance segmentation dataset mapper
+        elif cfg.INPUT.DATASET_MAPPER_NAME == "mask_former_instance_direction":
+            mapper = MaskFormerInstanceDatasetMapperDirection(cfg, True)
             return build_detection_train_loader(cfg, mapper=mapper)
         # coco instance segmentation lsj new baseline
         elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_instance_lsj":
