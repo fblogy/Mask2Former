@@ -42,6 +42,7 @@ from detectron2.utils.logger import setup_logger
 # MaskFormer
 from mask2former import (
     COCOInstanceNewBaselineDatasetMapper,
+    COCOInstanceNewBaselineDatasetMapperDirection,
     COCOPanopticNewBaselineDatasetMapper,
     InstanceSegEvaluator,
     MaskFormerInstanceDatasetMapper,
@@ -147,6 +148,10 @@ class Trainer(DefaultTrainer):
         # coco instance segmentation lsj new baseline
         elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_instance_lsj":
             mapper = COCOInstanceNewBaselineDatasetMapper(cfg, True)
+            return build_detection_train_loader(cfg, mapper=mapper)
+        # coco instance segmentation lsj new baseline with direction field
+        elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_instance_lsj_direction":
+            mapper = COCOInstanceNewBaselineDatasetMapperDirection(cfg, True)
             return build_detection_train_loader(cfg, mapper=mapper)
         # coco panoptic segmentation lsj new baseline
         elif cfg.INPUT.DATASET_MAPPER_NAME == "coco_panoptic_lsj":
