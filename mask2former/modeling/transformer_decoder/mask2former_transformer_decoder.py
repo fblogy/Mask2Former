@@ -447,9 +447,6 @@ class MultiScaleTransformerDecoder(nn.Module):
 @TRANSFORMER_DECODER_REGISTRY.register()
 class MultiScaleMaskedTransformerDecoder(MultiScaleTransformerDecoder):
 
-    def __init__(self, *args, **kwargs):
-        super.__init__(*args, **kwargs)
-
     def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
         decoder_output = self.decoder_norm(output)
         decoder_output = decoder_output.transpose(0, 1)

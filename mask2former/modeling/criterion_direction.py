@@ -152,8 +152,8 @@ class SetCriterionDirection(nn.Module):
         target_masks = target_masks[:, None]
 
         # XXX: This may be hacky. The source of float16 need to be checked.
-        # src_masks = src_masks.float()
-        # target_masks = target_masks.float()
+        src_masks = src_masks.float()
+        target_masks = target_masks.float()
 
         with torch.no_grad():
             # sample point_coords
