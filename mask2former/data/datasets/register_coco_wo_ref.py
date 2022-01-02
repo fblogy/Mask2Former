@@ -31,8 +31,7 @@ def register_coco_wo_ref(root):
         split = name
         name = f'coco_2017_wo_ref_{name}'
 
-        _metadata = MetadataCatalog.get(f'coco_2017_{name}').as_dict()
-
+        _metadata = MetadataCatalog.get(f'coco_2017_{split}').as_dict()
         _metadata['name'] = name
         DatasetCatalog.register(name, lambda x=root, y=split: load_coco_wo_ref(x, y))
         MetadataCatalog.get(name).set(**_metadata)
