@@ -14,8 +14,8 @@ MODEL:
     # NORM: "SyncBN"
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
-  # TRAIN: ("coco_2017_train",)
-  TRAIN: ("coco_2017_val",)
+  TRAIN: ("coco_2017_train",)
+  # TRAIN: ("coco_2017_val",)
   TEST: ("coco_2017_val",)
 SOLVER:
   IMS_PER_BATCH: 16
