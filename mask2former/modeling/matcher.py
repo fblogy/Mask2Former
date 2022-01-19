@@ -3,6 +3,7 @@
 """
 Modules to compute the matching cost and solve the corresponding LSAP.
 """
+from matplotlib.pyplot import axis
 import torch
 import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment
@@ -88,13 +89,14 @@ class HungarianMatcher(nn.Module):
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
         indices = []
-
+        affinity_matrixs = []
         # Iterate through batch size
         for b in range(bs):
 
             out_prob = outputs["pred_logits"][b].softmax(-1)  # [num_queries, num_classes]
             tgt_ids = targets[b]["labels"]
-
+            # print('bs', bs)
+            # print('tgt_ids', tgt_ids)
             # Compute the classification cost. Contrary to the loss, we don't use the NLL,
             # but approximate it in 1 - proba[target class].
             # The 1 is a constant that doesn't change the matching, it can be ommitted.
@@ -131,7 +133,6 @@ class HungarianMatcher(nn.Module):
                 tgt_mask = tgt_mask.float()
                 # Compute the focal loss between masks
                 cost_mask = batch_sigmoid_ce_loss_jit(out_mask, tgt_mask)
-
                 # Compute the dice loss betwen masks
                 cost_dice = batch_dice_loss_jit(out_mask, tgt_mask)
 
@@ -139,9 +140,40 @@ class HungarianMatcher(nn.Module):
             C = (self.cost_mask * cost_mask + self.cost_class * cost_class + self.cost_dice * cost_dice)
             C = C.reshape(num_queries, -1).cpu()
 
-            indices.append(linear_sum_assignment(C))
+            affinity_matrix = torch.zeros((C.shape[0], C.shape[0])).cuda()  
 
-        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
+            if C.shape[1] == 0:
+                indices.append(linear_sum_assignment(C))
+            else:
+                repeat_num = C.shape[0] // C.shape[1] + 1
+            
+                C2 = C.repeat(1, repeat_num)
+                # print(C2.shape)
+                C2[:, -C.shape[1] : ] += 10000
+                # print(C2)
+                ans = linear_sum_assignment(C2)
+                # print(type(ans))
+                # print(ans)
+                # print(ans[1])
+                ans = (ans[0], ans[1] % C.shape[1])  #array [2, N]
+                indices.append(ans)
+            # print(ans[1])
+            
+                ha = {}
+                for i in range(C.shape[0]):
+                    if ans[0][i] in ha:
+                        ha[ans[0][i]].append(i)
+                    else:
+                        ha[ans[0][i]] = [i]
+                for k in ha.keys():
+                    tmp = ha[k]
+                    for i in tmp:
+                        for j in tmp:
+                            affinity_matrix[i, j] = 1
+            affinity_matrixs.append(affinity_matrix)
+            # indices.append(linear_sum_assignment(C))
+
+        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices], torch.stack(affinity_matrixs, dim = 0)
 
     @torch.no_grad()
     def forward(self, outputs, targets):

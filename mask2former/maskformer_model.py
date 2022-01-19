@@ -115,7 +115,7 @@ class MaskFormer(nn.Module):
             num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
         )
 
-        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
+        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_affinity" : class_weight}
 
         if deep_supervision:
             dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS
@@ -124,7 +124,7 @@ class MaskFormer(nn.Module):
                 aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
             weight_dict.update(aux_weight_dict)
 
-        losses = ["labels", "masks"]
+        losses = ["labels", "masks", "affinitys"]
 
         criterion = SetCriterion(
             sem_seg_head.num_classes,
@@ -353,6 +353,7 @@ class MaskFormer(nn.Module):
 
         # [Q, K]
         scores = F.softmax(mask_cls, dim=-1)[:, :-1]
+        
         labels = torch.arange(
             self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
         # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)

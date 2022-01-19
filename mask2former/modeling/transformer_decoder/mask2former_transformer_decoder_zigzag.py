@@ -596,6 +596,7 @@ class MultiScaleZigZagInTransformerDecoder(nn.Module):
         # output FFNs
         if self.mask_classification:
             self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
+        self.affinity_embed = MLP(hidden_dim, hidden_dim, num_queries, 3)
         self.mask_embed = MLP(hidden_dim, hidden_dim, mask_dim, 3)
 
     @classmethod
@@ -645,13 +646,13 @@ class MultiScaleZigZagInTransformerDecoder(nn.Module):
 
         predictions_class = []
         predictions_mask = []
-
+        predictions_affinity = []
         # prediction heads on learnable query features
         # pixel embeddings related mask predictions, then flatten them to attn_mask
-        outputs_class, outputs_mask = self.forward_prediction_heads(output, mask_features)
+        outputs_class, outputs_mask, outputs_affinity = self.forward_prediction_heads(output, mask_features)
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
-
+        predictions_affinity.append(outputs_affinity)
         for i in range(self.num_layers):
 
             output = self.zigzag(mask_features, outputs_mask, output)
@@ -662,16 +663,18 @@ class MultiScaleZigZagInTransformerDecoder(nn.Module):
             # FFN
             output = self.transformer_ffn_layers[i](output)
 
-            outputs_class, outputs_mask = self.forward_prediction_heads(output, mask_features)
+            outputs_class, outputs_mask, outputs_affinity = self.forward_prediction_heads(output, mask_features)
             predictions_class.append(outputs_class)
             predictions_mask.append(outputs_mask)
+            predictions_affinity.append(outputs_affinity)
 
         assert len(predictions_class) == self.num_layers + 1
 
         out = {
             'pred_logits': predictions_class[-1],
             'pred_masks': predictions_mask[-1],
-            'aux_outputs': self._set_aux_loss(predictions_class if self.mask_classification else None, predictions_mask)
+            'pred_affinitys': predictions_affinity[-1], 
+            'aux_outputs': self._set_aux_loss(predictions_class if self.mask_classification else None, predictions_mask, predictions_affinity)
         }
         return out
 
@@ -694,17 +697,21 @@ class MultiScaleZigZagInTransformerDecoder(nn.Module):
         decoder_output = self.decoder_norm(output)
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
+
+        outputs_affinity = self.affinity_embed(decoder_output)
+
         mask_embed = self.mask_embed(decoder_output)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
-        return outputs_class, outputs_mask
+
+        return outputs_class, outputs_mask, outputs_affinity
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_seg_masks):
+    def _set_aux_loss(self, outputs_class, outputs_seg_masks, outputs_affinity):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
         if self.mask_classification:
-            return [{"pred_logits": a, "pred_masks": b} for a, b in zip(outputs_class[:-1], outputs_seg_masks[:-1])]
+            return [{"pred_logits": a, "pred_masks": b, "pred_affinitys" : c} for a, b, c in zip(outputs_class[:-1], outputs_seg_masks[:-1], outputs_affinity[:-1])]
         else:
-            return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
+            return [{"pred_masks": b, "pred_affinitys" : c} for b, c in zip(outputs_seg_masks[:-1], outputs_affinity[:-1])]

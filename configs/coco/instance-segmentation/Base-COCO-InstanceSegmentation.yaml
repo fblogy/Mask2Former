@@ -14,7 +14,8 @@ MODEL:
     # NORM: "SyncBN"
     RES5_MULTI_GRID: [1, 1, 1]  # not used
 DATASETS:
-  TRAIN: ("coco_2017_train",)
+  # TRAIN: ("coco_2017_train",)
+  TRAIN: ("coco_2017_val",)
   TEST: ("coco_2017_val",)
 SOLVER:
   IMS_PER_BATCH: 16
@@ -32,7 +33,7 @@ SOLVER:
     CLIP_VALUE: 0.01
     NORM_TYPE: 2.0
   AMP:
-    ENABLED: True
+    ENABLED: False
 INPUT:
   IMAGE_SIZE: 1024
   MIN_SCALE: 0.1
