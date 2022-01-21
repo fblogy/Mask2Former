@@ -161,10 +161,10 @@ class HungarianMatcher(nn.Module):
             
                 ha = {}
                 for i in range(C.shape[0]):
-                    if ans[0][i] in ha:
-                        ha[ans[0][i]].append(i)
+                    if ans[1][i] in ha:
+                        ha[ans[1][i]].append(i)
                     else:
-                        ha[ans[0][i]] = [i]
+                        ha[ans[1][i]] = [i]
                 for k in ha.keys():
                     tmp = ha[k]
                     for i in tmp:
