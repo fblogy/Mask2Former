@@ -278,7 +278,8 @@ class SetCriterion(nn.Module):
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         # num_masks = sum(len(t["labels"]) for t in targets)
-        num_masks = sum(100 for t in targets)
+        num_masks = sum(min(len(t["labels"])*2, 100) for t in targets)
+        # num_masks = sum(100 for t in targets)
         num_masks = torch.as_tensor([num_masks], dtype=torch.float, device=next(iter(outputs.values())).device)
         if is_dist_avail_and_initialized():
             torch.distributed.all_reduce(num_masks)

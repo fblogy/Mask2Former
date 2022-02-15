@@ -11,7 +11,8 @@ from torch import nn
 from torch.cuda.amp import autocast
 
 from detectron2.projects.point_rend.point_features import point_sample
-
+from numba import jit
+import numpy as np
 
 def batch_dice_loss(inputs: torch.Tensor, targets: torch.Tensor):
     """
@@ -145,8 +146,8 @@ class HungarianMatcher(nn.Module):
             if C.shape[1] == 0:
                 indices.append(linear_sum_assignment(C))
             else:
-                repeat_num = C.shape[0] // C.shape[1] + 1
-            
+                # repeat_num = C.shape[0] // C.shape[1] + 1
+                repeat_num = 2
                 C2 = C.repeat(1, repeat_num)
                 # print(C2.shape)
                 C2[:, -C.shape[1] : ] += 10000
@@ -158,7 +159,7 @@ class HungarianMatcher(nn.Module):
                 ans = (ans[0], ans[1] % C.shape[1])  #array [2, N]
                 indices.append(ans)
             # print(ans[1])
-            
+                # affinity_matrix = torch.from_numpy(get_affinity_matrix(ans[1], C.shape[0])).cuda()
                 ha = {}
                 for i in range(C.shape[0]):
                     if ans[1][i] in ha:
@@ -207,3 +208,7 @@ class HungarianMatcher(nn.Module):
         ]
         lines = [head] + [" " * _repr_indent + line for line in body]
         return "\n".join(lines)
+
+# @jit(nopython=True)
+# def get_affinity_matrix(ans, N):
+#     affinity_matrix = np.zeros()
