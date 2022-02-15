@@ -362,9 +362,15 @@ class MaskFormer(nn.Module):
         image_size = mask_pred.shape[-2:]
 
         # [Q, K]
-        scores = F.softmax(mask_cls, dim=-1)[:, :-1]
-        mask_pred2 = torch.zeros((len(ans), mask_pred.shape[-2], mask_pred.shape[-1]), device=mask_pred.device)
+        scores = F.softmax(mask_cls, dim=-1)[:, :]
         labels = scores.argmax(dim=-1)
+        ans2 = []
+        for i in range(len(ans)):
+            if labels[ans[i][0]] != self.sem_seg_head.num_classes:
+                ans2.append(ans[i])
+        ans = ans2
+        mask_pred2 = torch.zeros((len(ans), mask_pred.shape[-2], mask_pred.shape[-1]), device=mask_pred.device)
+        
         labels_per_image = torch.zeros((len(ans)), device=mask_pred.device)
         scores_per_image = torch.zeros((len(ans)), device=mask_pred.device)
         for i in range(len(ans)):

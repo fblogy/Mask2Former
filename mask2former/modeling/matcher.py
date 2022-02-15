@@ -161,7 +161,8 @@ class HungarianMatcher(nn.Module):
             # print(ans[1])
                 # affinity_matrix = torch.from_numpy(get_affinity_matrix(ans[1], C.shape[0])).cuda()
                 ha = {}
-                for i in range(C.shape[0]):
+                N = min(C.shape[0], C.shape[1] * repeat_num)
+                for i in range(N):
                     if ans[1][i] in ha:
                         ha[ans[1][i]].append(i)
                     else:
