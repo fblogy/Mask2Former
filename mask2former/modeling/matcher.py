@@ -265,7 +265,7 @@ class HungarianMatcher_Decouple(nn.Module):
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
         indices = []
-        affinity_matrixs = []
+        loc_indices = []
         # Iterate through batch size
         for b in range(bs):
 
@@ -316,42 +316,22 @@ class HungarianMatcher_Decouple(nn.Module):
             C = (self.cost_mask * cost_mask + self.cost_class * cost_class + self.cost_dice * cost_dice)
             C = C.reshape(num_queries, -1).cpu()
 
-            affinity_matrix = torch.zeros((C.shape[0], C.shape[0])).cuda()  
-
-            if C.shape[1] == 0:
-                indices.append(linear_sum_assignment(C))
-            else:
-                # repeat_num = C.shape[0] // C.shape[1] + 1
-                repeat_num = 2
-                C2 = C.repeat(1, repeat_num)
-                # print(C2.shape)
-                C2[:, -C.shape[1] : ] += 10000
-                # print(C2)
-                ans = linear_sum_assignment(C2)
-                # print(type(ans))
-                # print(ans)
-                # print(ans[1])
-                ans = (ans[0], ans[1] % C.shape[1])  #array [2, N]
-                indices.append(ans)
-            # print(ans[1])
-                # affinity_matrix = torch.from_numpy(get_affinity_matrix(ans[1], C.shape[0])).cuda()
-                ha = {}
-                N = min(C.shape[0], C.shape[1] * repeat_num)
-                for i in range(N):
-                    if ans[1][i] in ha:
-                        ha[ans[1][i]].append(i)
-                    else:
-                        ha[ans[1][i]] = [i]
-                for k in ha.keys():
-                    tmp = ha[k]
-                    for i in tmp:
-                        for j in tmp:
-                            affinity_matrix[i, j] = 1
-            affinity_matrixs.append(affinity_matrix)
-            # indices.append(linear_sum_assignment(C))
-
-        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices], torch.stack(affinity_matrixs, dim = 0)
-
+            # affinity_matrix = torch.zeros((C.shape[0], C.shape[0])).cuda()  
+            # print(cost_dice.shape)
+            loc_match_q = []
+            loc_match_gt = []
+            match_result = linear_sum_assignment(C)
+            match_q = match_result[0].tolist()
+            indices.append(match_result)
+            for i in range(C.shape[0]):
+                if i not in match_q:
+                    ind = torch.argmin(cost_dice[i], dim = 0)
+                    if cost_dice[i, ind] < 0.2:
+                        loc_match_q.append(i)
+                        loc_match_gt.append(ind.item)
+            loc_match_result = (np.array(loc_match_q), np.array(loc_match_gt))
+            loc_indices.append(loc_match_result)
+        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices], [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in loc_indices]
     @torch.no_grad()
     def forward(self, outputs, targets):
         """Performs the matching

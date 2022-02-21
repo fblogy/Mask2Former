@@ -217,7 +217,7 @@ class SetCriterion(nn.Module):
 
         # Retrieve the matching between the outputs of the last layer and the targets
         indices = self.matcher(outputs_without_aux, targets)
-
+        
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
         num_masks = torch.as_tensor(
@@ -435,14 +435,14 @@ class SetCriterion_Decouple(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def get_loss(self, loss, outputs, targets, indices, num_masks, affinity_matrix):
+    def get_loss(self, loss, outputs, targets, indices, num_masks, loc_match_indices):
         loss_map = {
             'labels': self.loss_labels,
             'masks': self.loss_masks,
-            'affinitys': self.loss_affinitys,
+            'ranks': self.loss_ranks,
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
-        return loss_map[loss](outputs, targets, indices, num_masks, affinity_matrix)
+        return loss_map[loss](outputs, targets, indices, num_masks, loc_match_indices)
 
     def forward(self, outputs, targets):
         """This performs the loss computation.
@@ -454,11 +454,16 @@ class SetCriterion_Decouple(nn.Module):
         outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         # Retrieve the matching between the outputs of the last layer and the targets
-        indices, affinity_matrix = self.matcher(outputs_without_aux, targets)
 
+        # list of pair
+        indices, loc_match_indices = self.matcher(outputs_without_aux, targets)
+        # print(indices)
+        # print(loc_match_indices)
+        # exit(0)
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         # num_masks = sum(len(t["labels"]) for t in targets)
-        num_masks = sum(min(len(t["labels"])*2, 100) for t in targets)
+        num_masks = sum(len(t["labels"]) for t in targets)
+        num_masks += sum(t[0].numel() for t in loc_match_indices)
         # num_masks = sum(100 for t in targets)
         num_masks = torch.as_tensor([num_masks], dtype=torch.float, device=next(iter(outputs.values())).device)
         if is_dist_avail_and_initialized():
@@ -468,14 +473,14 @@ class SetCriterion_Decouple(nn.Module):
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, affinity_matrix))
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, loc_match_indices))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
-                indices, affinity_matrix = self.matcher(aux_outputs, targets)
+                indices, loc_match_indices = self.matcher(aux_outputs, targets)
                 for loss in self.losses:
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, affinity_matrix)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, loc_match_indices)
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)
 
