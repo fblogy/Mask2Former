@@ -323,14 +323,21 @@ class HungarianMatcher_Decouple(nn.Module):
             match_result = linear_sum_assignment(C)
             match_q = match_result[0].tolist()
             indices.append(match_result)
-            for i in range(C.shape[0]):
-                if i not in match_q:
-                    ind = torch.argmin(cost_dice[i], dim = 0)
-                    if cost_dice[i, ind] < 0.2:
-                        loc_match_q.append(i)
-                        loc_match_gt.append(ind.item)
+            if (C.shape[1] > 0):
+                for i in range(C.shape[0]):
+                    if i not in match_q:
+                        ind = torch.argmin(cost_dice[i], dim = 0)
+                        # print('ind', ind)
+                        # print('ind item', ind.item())
+                        if cost_dice[i, ind] < 0.2:
+                            loc_match_q.append(i)
+                            loc_match_gt.append(ind.item())
+            # print('loc_match_q', loc_match_q)
+            # print('loc_match_gt', loc_match_gt)
             loc_match_result = (np.array(loc_match_q), np.array(loc_match_gt))
             loc_indices.append(loc_match_result)
+            # print('indices', indices[0])
+            # print(type(indices[0][0]))
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices], [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in loc_indices]
     @torch.no_grad()
     def forward(self, outputs, targets):

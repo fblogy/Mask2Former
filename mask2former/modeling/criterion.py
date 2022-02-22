@@ -295,71 +295,94 @@ class SetCriterion_Decouple(nn.Module):
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
-    def loss_labels(self, outputs, targets, indices, num_masks, affinity_matrix):
+    def loss_labels(self, outputs, targets, indices, num_masks, loc_match_indices):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
         assert "pred_logits" in outputs
-        src_logits = outputs["pred_logits"].float()
+        src_logits = outputs["pred_logits"].float() #[B, N, C]
+        # print('label src_logits', src_logits.shape)
         # print('indices', indices)
-        idx = self._get_src_permutation_idx(indices)
-        # print('idx', idx)
+
+        
+        idx = self._get_src_permutation_idx(indices) # pair (tensor of batch id, tensor of query id) 
+        idx_loc = self._get_src_permutation_idx(loc_match_indices)
+        # print('label idx', idx)
         # print()
-        target_classes_o = []
-        for t, (_, J) in zip(targets, indices):
-            tmp = torch.zeros_like(J, device=src_logits.device)
-            for i in range(J.shape[0]):
-                tmp[i] = t["labels"][J[i]]
-            target_classes_o.append(tmp)
-        target_classes_o = torch.cat(target_classes_o)
+        # target_classes_o = []
+        # for t, (_, J) in zip(targets, indices):
+        #     tmp = torch.zeros_like(J, device=src_logits.device)
+        #     for i in range(J.shape[0]):
+        #         tmp[i] = t["labels"][J[i]]
+        #     target_classes_o.append(tmp)
+        # target_classes_o = torch.cat(target_classes_o)
             # print(t)
             # print(J)
             # assert(J < len(t["labels"]))
         # tmp = [t["labels"][J] for t, (_, J) in zip(targets, indices)]
         # print('tmp', tmp)
-        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)]) # tensor [len(indices[0])]
+        target_classes_loc = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, loc_match_indices)])
+        # print('label target_classes_o', target_classes_o)
 
-        # print('target_classes_o', target_classes_o)
-
-        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
-        # print('target_classes', target_classes)
+        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device) #[B, N]
+        # print('label target_classes', target_classes.shape)
 
 
         target_classes[idx] = target_classes_o
-
+        target_classes[idx_loc] = target_classes_loc
         # print('target_classes', target_classes)
 
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
         losses = {"loss_ce": loss_ce}
         return losses
 
-    def loss_affinitys(self, outputs, targets, indices, num_masks, affinity_matrix):
+    def loss_ranks(self, outputs, targets, indices, num_masks, loc_match_indices):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
-        assert "pred_affinitys" in outputs
-        src_logits = outputs["pred_affinitys"].float()
-        # print(src_logits.shape)
-        # idx = self._get_src_permutation_idx(indices)
-        # target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
-        # target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
-        # target_classes[idx] = target_classes_o
+        assert "pred_ranks" in outputs
+        src_logits = outputs["pred_ranks"].float() #[B, N, 1]
+        # print('src_logits', src_logits.shape)
+        idx = self._get_src_permutation_idx(loc_match_indices)
+        # print('idx', idx)
+        # print('loc_match_indices', loc_match_indices)
+        # for t, (_, J) in zip(targets, loc_match_indices):
+        #     print('t', t)
+        #     print('_', _)
+        #     print('J', J)
+        target_classes_o = torch.cat([t["labels"][J] * 0 for t, (_, J) in zip(targets, loc_match_indices)])
+        # print('target_classes_o', target_classes_o)
+        
+        target_classes = torch.full(src_logits.shape[:2], 1, dtype=torch.int64, device=src_logits.device)
+        target_classes[idx] = target_classes_o
+
+
 
         # loss_bce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        loss_bce = F.binary_cross_entropy_with_logits(src_logits, affinity_matrix)
-        losses = {"loss_affinity": loss_bce}
+        loss_bce = F.binary_cross_entropy_with_logits(src_logits, target_classes[:, :, None].float())
+        losses = {"loss_rank": loss_bce}
         return losses
 
 
 
-    def loss_masks(self, outputs, targets, indices, num_masks, affinity_matrix):
+    def loss_masks(self, outputs, targets, indices, num_masks, loc_match_indices):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
         assert "pred_masks" in outputs
 
-        src_idx = self._get_src_permutation_idx(indices)
-        tgt_idx = self._get_tgt_permutation_idx(indices)
+        indices_all = []
+        B = len(indices)
+        for bs in range(B):
+            indices_all.append((torch.cat((indices[bs][0], loc_match_indices[bs][0]), dim = 0), torch.cat((indices[bs][1], loc_match_indices[bs][1]), dim = 0)))
+
+
+        src_idx = self._get_src_permutation_idx(indices_all)
+
+        # src_idx_loc = self._get_src_permutation_idx(loc_match_indices)
+
+        tgt_idx = self._get_tgt_permutation_idx(indices_all)
         src_masks = outputs["pred_masks"]
         # print(src_masks.shape)
         src_masks = src_masks[src_idx]
