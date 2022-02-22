@@ -18,6 +18,7 @@ def add_maskformer2_config(cfg):
     cfg.INPUT.CROP.SINGLE_CATEGORY_MAX_AREA = 1.0
     # Pad image and segmentation GT in dataset mapper.
     cfg.INPUT.SIZE_DIVISIBILITY = -1
+    cfg.TEST.START_PERIOD = 0
 
     # solver config
     # weight decay on embedding
