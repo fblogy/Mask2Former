@@ -151,7 +151,7 @@ class HungarianMatcher(nn.Module):
                 size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
                 mode="bilinear",
                 align_corners=False,
-            ).view(tgt_mask.shape[0], -1)
+            ).view(tgt_mask.shape[0], out_mask.sahep[1])
 
 
             with autocast(enabled=False):
