@@ -29,7 +29,7 @@ def batch_dice_loss(inputs: torch.Tensor, targets: torch.Tensor):
     inputs = inputs.flatten(1)
     numerator = 2 * torch.einsum("nc,mc->nm", inputs, targets)
     denominator = inputs.sum(-1)[:, None] + targets.sum(-1)[None, :]
-    loss = 1 - (numerator + 1) / (denominator + 1)
+    loss = 1 - (numerator + 1e-6) / (denominator + 1e-6)
     return loss
 
 
