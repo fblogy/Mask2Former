@@ -330,7 +330,7 @@ class MultiScaleTransformerDecoder(nn.Module):
         if self.mask_classification:
             self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
         self.mask_embed = MLP(hidden_dim, hidden_dim, mask_dim, 3)
-        self.rank_embed = nn.Linear(hidden_dim, 1)
+
     @classmethod
     def from_config(cls, cfg, in_channels, mask_classification):
         ret = {}
@@ -385,13 +385,13 @@ class MultiScaleTransformerDecoder(nn.Module):
 
         predictions_class = []
         predictions_mask = []
-        predictions_rank = []
+
         # prediction heads on learnable query features
-        outputs_class, outputs_mask, attn_mask, outputs_rank = self.forward_prediction_heads(
+        outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
             output, mask_features, attn_mask_target_size=size_list[0])
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
-        predictions_rank.append(outputs_rank)
+
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
@@ -410,18 +410,17 @@ class MultiScaleTransformerDecoder(nn.Module):
             # FFN
             output = self.transformer_ffn_layers[i](output)
 
-            outputs_class, outputs_mask, attn_mask, outputs_rank = self.forward_prediction_heads(
+            outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
                 output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])
             predictions_class.append(outputs_class)
             predictions_mask.append(outputs_mask)
-            predictions_rank.append(outputs_rank)
+
         assert len(predictions_class) == self.num_layers + 1
 
         out = {
             'pred_logits': predictions_class[-1],
             'pred_masks': predictions_mask[-1],
-            'pred_ranks': predictions_rank[-1], 
-            'aux_outputs': self._set_aux_loss(predictions_class if self.mask_classification else None, predictions_mask, predictions_rank)
+            'aux_outputs': self._set_aux_loss(predictions_class if self.mask_classification else None, predictions_mask)
         }
         return out
 
@@ -429,25 +428,20 @@ class MultiScaleTransformerDecoder(nn.Module):
         decoder_output = self.decoder_norm(output)
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
-
-        outputs_rank = self.rank_embed(decoder_output)
-
         mask_embed = self.mask_embed(decoder_output)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
-
-        return outputs_class, outputs_mask, None, outputs_rank
+        return outputs_class, outputs_mask, None
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_seg_masks, outputs_rank):
+    def _set_aux_loss(self, outputs_class, outputs_seg_masks):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
         if self.mask_classification:
-            return [{"pred_logits": a, "pred_masks": b, "pred_ranks" : c} for a, b, c in zip(outputs_class[:-1], outputs_seg_masks[:-1], outputs_rank[:-1])]
+            return [{"pred_logits": a, "pred_masks": b} for a, b in zip(outputs_class[:-1], outputs_seg_masks[:-1])]
         else:
-            return [{"pred_masks": b, "pred_ranks" : c} for b, c in zip(outputs_seg_masks[:-1], outputs_rank[:-1])]
-
+            return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
 
 
 @TRANSFORMER_DECODER_REGISTRY.register()
@@ -458,7 +452,6 @@ class MultiScaleMaskedTransformerDecoder(MultiScaleTransformerDecoder):
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
         mask_embed = self.mask_embed(decoder_output)
-        outputs_rank = self.rank_embed(decoder_output)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
         # NOTE: prediction is of higher-resolution
@@ -470,4 +463,4 @@ class MultiScaleMaskedTransformerDecoder(MultiScaleTransformerDecoder):
                      0.5).bool()
         attn_mask = attn_mask.detach()
 
-        return outputs_class, outputs_mask, attn_mask, outputs_rank
+        return outputs_class, outputs_mask, attn_mask
