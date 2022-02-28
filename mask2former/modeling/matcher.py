@@ -11,7 +11,7 @@ from torch import nn
 from torch.cuda.amp import autocast
 
 from detectron2.projects.point_rend.point_features import point_sample
-from numba import jit
+from numba import jit, typed, types
 import numpy as np
 from skimage import io
 
@@ -331,7 +331,7 @@ class HungarianMatcher_Decouple(nn.Module):
                 size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
                 mode="bilinear",
                 align_corners=False,
-            ).view(tgt_mask.shape[0], -1)
+            ).view(tgt_mask.shape[0], out_mask.shape[1])
 
             with autocast(enabled=False):
                 out_mask = out_mask.float()
@@ -347,26 +347,43 @@ class HungarianMatcher_Decouple(nn.Module):
 
             # affinity_matrix = torch.zeros((C.shape[0], C.shape[0])).cuda()  
             # print(cost_dice.shape)
-            loc_match_q = []
-            loc_match_gt = []
+            # loc_match_q = []
+            # loc_match_gt = []
+            # loc_match_result = (np.array(loc_match_q), np.array(loc_match_gt))
             match_result = linear_sum_assignment(C)
-            match_q = match_result[0].tolist()
+            # match_q = match_result[0].tolist()
             indices.append(match_result)
+            
+
             if (C.shape[1] > 0):
-                for i in range(C.shape[0]):
-                    if i not in match_q:
-                        ind = torch.argmin(cost_dice[i], dim = 0)
-                        # print('ind', ind)
-                        # print('ind item', ind.item())
-                        if cost_dice[i, ind] < 0.2:
-                            loc_match_q.append(i)
-                            loc_match_gt.append(ind.item())
+                mincostdice, ind = torch.min(cost_dice, dim = 1)
+                vis = np.zeros((C.shape[0]), dtype = np.bool)
+                vis[match_result[0]] = True
+                idx = (vis == False) & (mincostdice < 0.18).cpu().numpy()
+                q_id = np.array(range(C.shape[0]))
+                # print(idx.shape)
+                loc_match_result = (q_id[idx], ind.cpu().numpy()[idx])
+                # print(mincostdice[q_id[idx]])
+            else:
+                loc_match_result = (np.array([]), np.array([]))
+            # loc_match_result = (np.array([]), np.array([]))
+                # for i in range(C.shape[0]):
+                #     if idx[i] == True:
+                #         # print('ind', ind)
+                #         # print('ind item', ind.item())
+                #         loc_match_q.append(i)
+                #         loc_match_gt.append(ind[i].item())
             # print('loc_match_q', loc_match_q)
             # print('loc_match_gt', loc_match_gt)
-            loc_match_result = (np.array(loc_match_q), np.array(loc_match_gt))
+            # loc_match_q = []
+            # loc_match_gt = []
+            # loc_match_result = (np.array(loc_match_q), np.array(loc_match_gt))
+            # print('match_result', match_result)
+            # print('loc_match_result', loc_match_result)
             loc_indices.append(loc_match_result)
             # print('indices', indices[0])
             # print(type(indices[0][0]))
+        # return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices], [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in loc_indices]
     @torch.no_grad()
     def forward(self, outputs, targets):
@@ -402,5 +419,12 @@ class HungarianMatcher_Decouple(nn.Module):
         return "\n".join(lines)
 
 # @jit(nopython=True)
-# def get_affinity_matrix(ans, N):
+# def get_loc_match_result(idx, ind):
+#     x = typed.List.empty_list(types.int16)
+#     y = typed.List.empty_list(types.int16)
+#     for i in range(idx.shape[0]):
+#         if idx[i]:
+#             x.append(i)
+#             y.append(ind[i])
+#     return (np.array(x, dtype = np.int16), np.array(y, dtype = np.int16))
 #     affinity_matrix = np.zeros()

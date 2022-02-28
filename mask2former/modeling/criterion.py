@@ -8,7 +8,7 @@ import logging
 import torch
 import torch.nn.functional as F
 from torch import nn
-
+import time
 from detectron2.utils.comm import get_world_size
 from detectron2.projects.point_rend.point_features import (
     get_uncertain_point_coords_with_randomness,
@@ -371,13 +371,13 @@ class SetCriterion_Decouple(nn.Module):
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
         assert "pred_masks" in outputs
-
+        # indices_all = indices
         indices_all = []
         B = len(indices)
         for bs in range(B):
             indices_all.append((torch.cat((indices[bs][0], loc_match_indices[bs][0]), dim = 0), torch.cat((indices[bs][1], loc_match_indices[bs][1]), dim = 0)))
 
-
+        # print(indices_all)
         src_idx = self._get_src_permutation_idx(indices_all)
 
         # src_idx_loc = self._get_src_permutation_idx(loc_match_indices)
@@ -386,17 +386,18 @@ class SetCriterion_Decouple(nn.Module):
         src_masks = outputs["pred_masks"]
         # print(src_masks.shape)
         src_masks = src_masks[src_idx]
-        # masks = [t["masks"] for t in targets]
+        masks = [t["masks"] for t in targets]
 
-        masks = []
-        for t, (_, J) in zip(targets, indices):
-            # print(t['masks'])
-            # print(t['masks'].shape)
-            tmp = torch.zeros((J.shape[0], t["masks"].shape[1], t["masks"].shape[2]), device=src_masks.device)
-            for i in range(J.shape[0]):
-                tmp[i] = t["masks"][J[i]]
-            masks.append(tmp)
-        # masks = torch.cat(masks)
+        # masks = []
+        # for t, (_, J) in zip(targets, indices): # batch is same
+        #     # print(t['masks'])
+        #     # print(t['masks'].shape)
+        #     tmp = t["masks"][J]
+        #     # tmp = torch.zeros((J.shape[0], t["masks"].shape[1], t["masks"].shape[2]), device=src_masks.device)
+        #     # for i in range(J.shape[0]):
+        #     #     tmp[i] = t["masks"][J[i]]
+        #     masks.append(tmp)
+        # # masks = torch.cat(masks)
 
 
         # TODO use valid to mask invalid areas due to padding in loss
@@ -441,7 +442,7 @@ class SetCriterion_Decouple(nn.Module):
             "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
             "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
         }
-
+        # print(losses)
         del src_masks
         del target_masks
         return losses
@@ -479,7 +480,9 @@ class SetCriterion_Decouple(nn.Module):
         # Retrieve the matching between the outputs of the last layer and the targets
 
         # list of pair
+        # t = time.time()
         indices, loc_match_indices = self.matcher(outputs_without_aux, targets)
+        # print('matcher', (time.time() - t))
         # print(indices)
         # print(loc_match_indices)
         # exit(0)
