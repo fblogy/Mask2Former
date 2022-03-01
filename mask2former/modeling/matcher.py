@@ -357,12 +357,22 @@ class HungarianMatcher_Decouple(nn.Module):
 
             if (C.shape[1] > 0):
                 mincostdice, ind = torch.min(cost_dice, dim = 1)
+                mingtcostdice, indquery = torch.min(cost_dice, dim = 0)
+
+                bestcost = mingtcostdice.cpu().numpy()
+                mincostdice = mincostdice.cpu().numpy()
+                ind = ind.cpu().numpy()
+                # bestcost = np.zeros((C.shape[1]), dtype = np.float)
+                # bestcost[match_result[1]] = cost_dice.cpu().numpy()[match_result[0], match_result[1]]
+                # print('bestcost', bestcost)
+                # print('cost_dice', cost_dice.cpu().numpy())
+                # print('bestcost[ind]', bestcost[ind])
                 vis = np.zeros((C.shape[0]), dtype = np.bool)
                 vis[match_result[0]] = True
-                idx = (vis == False) & (mincostdice < 0.18).cpu().numpy()
+                idx = (vis == False) & (mincostdice - 1e-6 < bestcost[ind])
                 q_id = np.array(range(C.shape[0]))
                 # print(idx.shape)
-                loc_match_result = (q_id[idx], ind.cpu().numpy()[idx])
+                loc_match_result = (q_id[idx], ind[idx])
                 # print(mincostdice[q_id[idx]])
             else:
                 loc_match_result = (np.array([]), np.array([]))
