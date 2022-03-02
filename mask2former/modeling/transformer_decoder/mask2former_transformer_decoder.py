@@ -370,8 +370,15 @@ class MultiScaleTransformerDecoder(nn.Module):
 
         for i in range(self.num_feature_levels):
             size_list.append(x[i].shape[-2:])
-            pos.append(self.pe_layer(x[i], None).flatten(2))
-            src.append(self.input_proj[i](x[i]).flatten(2) + self.level_embed.weight[i][None, :, None])
+            # y = x[i]
+            y = F.interpolate(
+                mask_features,
+                size=(x[i].shape[-2], x[i].shape[-1]),
+                mode="bilinear",
+                align_corners=False,
+            )
+            pos.append(self.pe_layer(y, None).flatten(2))
+            src.append(self.input_proj[i](y).flatten(2) + self.level_embed.weight[i][None, :, None])
 
             # flatten NxCxHxW to HWxNxC
             pos[-1] = pos[-1].permute(2, 0, 1)
