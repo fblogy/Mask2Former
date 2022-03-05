@@ -125,33 +125,33 @@ class HungarianMatcher(nn.Module):
             out_mask = out_mask.float()
             tgt_mask = tgt_mask.float()
             # # all masks share the same set of points for efficient matching!
-            # point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
+            point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
             # # get gt labels
-            # tgt_mask = point_sample(
-            #     tgt_mask,
-            #     point_coords.repeat(tgt_mask.shape[0], 1, 1),
-            #     align_corners=False,
-            # ).squeeze(1)
-
-            # out_mask = point_sample(
-            #     out_mask,
-            #     point_coords.repeat(out_mask.shape[0], 1, 1),
-            #     align_corners=False,
-            # ).squeeze(1)
-
-            out_mask = F.interpolate(
-                out_mask,
-                size=(out_mask.shape[-2] // 2, out_mask.shape[-1] // 2),
-                mode="bilinear",
-                align_corners=False,
-            ).view(out_mask.shape[0], -1)
-
-            tgt_mask = F.interpolate(
+            tgt_mask = point_sample(
                 tgt_mask,
-                size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
-                mode="bilinear",
+                point_coords.repeat(tgt_mask.shape[0], 1, 1),
                 align_corners=False,
-            ).view(tgt_mask.shape[0], out_mask.shape[1])
+            ).squeeze(1)
+
+            out_mask = point_sample(
+                out_mask,
+                point_coords.repeat(out_mask.shape[0], 1, 1),
+                align_corners=False,
+            ).squeeze(1)
+
+            # out_mask = F.interpolate(
+            #     out_mask,
+            #     size=(out_mask.shape[-2] // 2, out_mask.shape[-1] // 2),
+            #     mode="bilinear",
+            #     align_corners=False,
+            # ).view(out_mask.shape[0], -1)
+
+            # tgt_mask = F.interpolate(
+            #     tgt_mask,
+            #     size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
+            #     mode="bilinear",
+            #     align_corners=False,
+            # ).view(tgt_mask.shape[0], out_mask.shape[1])
 
 
             with autocast(enabled=False):
