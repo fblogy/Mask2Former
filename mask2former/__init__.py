@@ -21,6 +21,9 @@ from .data.dataset_mappers.mask_former_semantic_dataset_mapper import (
 # models
 from .maskformer_model import MaskFormer
 from .maskformer_model_decouple import MaskFormerDecouple
+from .maskformer_model_matcherdwsp import MaskFormerMatcherDwsp
+
+
 from .maskformer_model_direction import MaskFormerDirection
 from .test_time_augmentation import SemanticSegmentorWithTTA
 

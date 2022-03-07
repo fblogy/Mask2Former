@@ -1,4 +1,21 @@
 _BASE_: Base-COCO-InstanceSegmentation.yaml
+SOLVER:
+  IMS_PER_BATCH: 16
+  BASE_LR: 0.0001
+  STEPS: (163889, 177546)
+  MAX_ITER: 184375
+  WARMUP_FACTOR: 1.0
+  WARMUP_ITERS: 10
+  WEIGHT_DECAY: 0.05
+  OPTIMIZER: "ADAMW"
+  BACKBONE_MULTIPLIER: 0.1
+  CLIP_GRADIENTS:
+    ENABLED: True
+    CLIP_TYPE: "full_model"
+    CLIP_VALUE: 0.01
+    NORM_TYPE: 2.0
+  AMP:
+    ENABLED: True
 MODEL:
   META_ARCHITECTURE: "MaskFormer"
   SEM_SEG_HEAD:
@@ -16,7 +33,7 @@ MODEL:
     COMMON_STRIDE: 4
     TRANSFORMER_ENC_LAYERS: 6
   MASK_FORMER:
-    TRANSFORMER_DECODER_NAME: "MultiScaleMaskedTransformerDecoderDecoupleClass"
+    TRANSFORMER_DECODER_NAME: "MultiScaleMaskedTransformerDecoder"
     TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
     DEEP_SUPERVISION: True
     NO_OBJECT_WEIGHT: 0.1

@@ -209,7 +209,7 @@ class MLP(nn.Module):
 
 
 @TRANSFORMER_DECODER_REGISTRY.register()
-class MultiScaleTransformerDecoder(nn.Module):
+class MultiScaleTransformerDecoderDecoupleClass(nn.Module):
 
     _version = 2
 
@@ -282,6 +282,10 @@ class MultiScaleTransformerDecoder(nn.Module):
         self.transformer_cross_attention_layers = nn.ModuleList()
         self.transformer_ffn_layers = nn.ModuleList()
 
+        self.transformer_self_attention_layers_class = nn.ModuleList()
+        self.transformer_cross_attention_layers_class = nn.ModuleList()
+        self.transformer_ffn_layers_class = nn.ModuleList()
+
         for _ in range(self.num_layers):
             self.transformer_self_attention_layers.append(
                 SelfAttentionLayer(
@@ -306,6 +310,29 @@ class MultiScaleTransformerDecoder(nn.Module):
                     dropout=0.0,
                     normalize_before=pre_norm,
                 ))
+            self.transformer_self_attention_layers_class.append(
+                SelfAttentionLayer(
+                    d_model=hidden_dim,
+                    nhead=nheads,
+                    dropout=0.0,
+                    normalize_before=pre_norm,
+                ))
+
+            self.transformer_cross_attention_layers_class.append(
+                CrossAttentionLayer(
+                    d_model=hidden_dim,
+                    nhead=nheads,
+                    dropout=0.0,
+                    normalize_before=pre_norm,
+                ))
+
+            self.transformer_ffn_layers_class.append(
+                FFNLayer(
+                    d_model=hidden_dim,
+                    dim_feedforward=dim_feedforward,
+                    dropout=0.0,
+                    normalize_before=pre_norm,
+                ))
 
         self.decoder_norm = nn.LayerNorm(hidden_dim)
 
@@ -314,6 +341,11 @@ class MultiScaleTransformerDecoder(nn.Module):
         self.query_feat = nn.Embedding(num_queries, hidden_dim)
         # learnable query p.e.
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
+
+
+        self.query_feat_class = nn.Embedding(num_queries, hidden_dim)
+        # learnable query p.e.
+        self.query_embed_class = nn.Embedding(num_queries, hidden_dim)
 
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
@@ -390,12 +422,16 @@ class MultiScaleTransformerDecoder(nn.Module):
         query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)
         output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
 
+        query_embed_class = self.query_embed_class.weight.unsqueeze(1).repeat(1, bs, 1)
+        output_class = self.query_feat_class.weight.unsqueeze(1).repeat(1, bs, 1)
+
+
         predictions_class = []
         predictions_mask = []
 
         # prediction heads on learnable query features
         outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
-            output, mask_features, attn_mask_target_size=size_list[0])
+            output, mask_features, attn_mask_target_size=size_list[0], output_class=output_class)
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
 
@@ -417,8 +453,23 @@ class MultiScaleTransformerDecoder(nn.Module):
             # FFN
             output = self.transformer_ffn_layers[i](output)
 
+            output_class = self.transformer_cross_attention_layers_class[i](
+                output_class,
+                src[level_index],
+                memory_mask=attn_mask,
+                memory_key_padding_mask=None,  # here we do not apply masking on padded region
+                pos=pos[level_index],
+                query_pos=query_embed_class)
+
+            output_class = self.transformer_self_attention_layers_class[i](
+                output_class, tgt_mask=None, tgt_key_padding_mask=None, query_pos=query_embed_class)
+
+            # FFN
+            output_class = self.transformer_ffn_layers_class[i](output_class)
+            
+
             outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
-                output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])
+                output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels], output_class=output_class)
             predictions_class.append(outputs_class)
             predictions_mask.append(outputs_mask)
 
@@ -431,10 +482,13 @@ class MultiScaleTransformerDecoder(nn.Module):
         }
         return out
 
-    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
+    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, output_class):
         decoder_output = self.decoder_norm(output)
+        decoder_output_class = self.decoder_norm(output_class)
         decoder_output = decoder_output.transpose(0, 1)
-        outputs_class = self.class_embed(decoder_output)
+        decoder_output_class = decoder_output_class.transpose(0, 1)
+
+        outputs_class = self.class_embed(decoder_output_class)
         mask_embed = self.mask_embed(decoder_output)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
@@ -452,12 +506,15 @@ class MultiScaleTransformerDecoder(nn.Module):
 
 
 @TRANSFORMER_DECODER_REGISTRY.register()
-class MultiScaleMaskedTransformerDecoder(MultiScaleTransformerDecoder):
+class MultiScaleMaskedTransformerDecoderDecoupleClass(MultiScaleTransformerDecoderDecoupleClass):
 
-    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size):
+    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, output_class):
         decoder_output = self.decoder_norm(output)
+        decoder_output_class = self.decoder_norm(output_class)
         decoder_output = decoder_output.transpose(0, 1)
-        outputs_class = self.class_embed(decoder_output)
+        decoder_output_class = decoder_output_class.transpose(0, 1)
+
+        outputs_class = self.class_embed(decoder_output_class)
         mask_embed = self.mask_embed(decoder_output)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 

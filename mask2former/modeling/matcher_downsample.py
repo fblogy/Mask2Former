@@ -27,10 +27,9 @@ def batch_dice_loss(inputs: torch.Tensor, targets: torch.Tensor):
     """
     inputs = inputs.sigmoid()
     inputs = inputs.flatten(1)
-    numerator = 2 * torch.einsum("nc,mc->nm", inputs, targets)
+    numerator = torch.einsum("nc,mc->nm", inputs, targets)
     denominator = inputs.sum(-1)[:, None] + targets.sum(-1)[None, :]
-    # loss = 1 - (numerator + 1e-6) / (denominator + 1e-6)
-    loss = 1 - (numerator + 1) / (denominator + 1)
+    loss = 1 - (numerator + 1e-6) / (denominator + 1e-6 - numerator)
     return loss
 
 
@@ -126,33 +125,33 @@ class HungarianMatcher(nn.Module):
             out_mask = out_mask.float()
             tgt_mask = tgt_mask.float()
             # # all masks share the same set of points for efficient matching!
-            point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
+            # point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
             # # get gt labels
-            tgt_mask = point_sample(
-                tgt_mask,
-                point_coords.repeat(tgt_mask.shape[0], 1, 1),
-                align_corners=False,
-            ).squeeze(1)
-
-            out_mask = point_sample(
-                out_mask,
-                point_coords.repeat(out_mask.shape[0], 1, 1),
-                align_corners=False,
-            ).squeeze(1)
-
-            # out_mask = F.interpolate(
-            #     out_mask,
-            #     size=(out_mask.shape[-2] // 2, out_mask.shape[-1] // 2),
-            #     mode="bilinear",
-            #     align_corners=False,
-            # ).view(out_mask.shape[0], -1)
-
-            # tgt_mask = F.interpolate(
+            # tgt_mask = point_sample(
             #     tgt_mask,
-            #     size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
-            #     mode="bilinear",
+            #     point_coords.repeat(tgt_mask.shape[0], 1, 1),
             #     align_corners=False,
-            # ).view(tgt_mask.shape[0], out_mask.shape[1])
+            # ).squeeze(1)
+
+            # out_mask = point_sample(
+            #     out_mask,
+            #     point_coords.repeat(out_mask.shape[0], 1, 1),
+            #     align_corners=False,
+            # ).squeeze(1)
+
+            out_mask = F.interpolate(
+                out_mask,
+                size=(out_mask.shape[-2] // 2, out_mask.shape[-1] // 2),
+                mode="bilinear",
+                align_corners=False,
+            ).view(out_mask.shape[0], -1)
+
+            tgt_mask = F.interpolate(
+                tgt_mask,
+                size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
+                mode="bilinear",
+                align_corners=False,
+            ).view(tgt_mask.shape[0], out_mask.shape[1])
 
 
             with autocast(enabled=False):
@@ -176,9 +175,7 @@ class HungarianMatcher(nn.Module):
             #     self.cost_class * cost_class
             # )
             C = (
-                self.cost_mask * cost_mask
-                + self.cost_class * cost_class
-                + self.cost_dice * cost_dice
+                -((-cost_class) ** (0.2)) * ((1 - cost_dice) ** (0.8))
             )
             
             C = C.reshape(num_queries, -1).cpu()
