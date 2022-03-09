@@ -15,7 +15,7 @@ from detectron2.utils.memory import retry_if_cuda_oom
 
 from .modeling.criterion import SetCriterion
 from .modeling.matcher import HungarianMatcher
-
+import time
 
 @META_ARCH_REGISTRY.register()
 class MaskFormer(nn.Module):
@@ -92,6 +92,7 @@ class MaskFormer(nn.Module):
 
         if not self.semantic_on:
             assert self.sem_seg_postprocess_before_inference
+        self.cnt = 0
 
     @classmethod
     def from_config(cls, cfg):
@@ -115,7 +116,7 @@ class MaskFormer(nn.Module):
             num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
         )
 
-        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
+        weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
 
         if deep_supervision:
             dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS
@@ -205,10 +206,11 @@ class MaskFormer(nn.Module):
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.size_divisibility)
-
+        # t = time.time()
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features)
-
+        # print('forward', time.time() - t)
+        
         if self.training:
             # mask classification target
             if "instances" in batched_inputs[0]:
@@ -216,10 +218,10 @@ class MaskFormer(nn.Module):
                 targets = self.prepare_targets(gt_instances, images)
             else:
                 targets = None
-
+            # t = time.time()
             # bipartite matching-based loss
             losses = self.criterion(outputs, targets)
-
+            # print('cal loss', time.time() - t)
             for k in list(losses.keys()):
                 if k in self.criterion.weight_dict:
                     losses[k] *= self.criterion.weight_dict[k]
@@ -348,20 +350,85 @@ class MaskFormer(nn.Module):
             return panoptic_seg, segments_info
 
     def instance_inference(self, mask_cls, mask_pred):
+
+        # mask_cls [Q, K]  mask_pred [Q, H, W]
+
         # mask_pred is already processed to have the same shape as original input
         image_size = mask_pred.shape[-2:]
 
+
+
+        # # modify mask 
+        # scores_max, labels_max = F.softmax(mask_cls, dim=-1)[:, :-1].max(-1)
+        # scores_max, scores_indices = torch.sort(scores_max, descending=True, dim = 0)
+        # mask_pred = mask_pred[scores_indices]
+        # mask_cls = mask_cls[scores_indices]
+        
+        # mask_scores = (mask_pred.sigmoid().flatten(1) * (mask_pred > 0).flatten(1)).sum(1) / ((mask_pred > 0).flatten(1).sum(1) + 1e-6)
+        # cnt = 0
+        # for i in range(scores_max.shape[0]):
+        #     for j in range(i+1, scores_max.shape[0]):
+
+        #         maski = (mask_pred[i] > 0).flatten(0)
+        #         maskj = (mask_pred[j] > 0).flatten(0)
+        #         iou = (maski * maskj).sum(0) / (maski.sum(0) + maskj.sum(0) - (maski * maskj).sum(0) + 1e-6)
+        #         idj = -1
+        #         maxmask_score = mask_scores[i]
+        #         if (iou > 0.8 and maxmask_score < mask_scores[j] ):
+        #             idj = j
+        #             maxmask_score = mask_scores[j]
+        #     if idj != -1:
+        #         cnt += 1
+        #         tmp = mask_pred[i].clone()
+        #         mask_pred[i] = mask_pred[idj].clone()
+        #         mask_pred[idj] = tmp
+        #         tmp = mask_scores[i].clone()
+        #         mask_scores[i] = mask_scores[idj].clone()
+        #         mask_scores[idj] = tmp
+        # print(cnt)
+
+
+        # ori inference
         # [Q, K]
-        scores = F.softmax(mask_cls, dim=-1)[:, :-1]
+        
+        # mask_scores = (mask_pred.sigmoid().flatten(1) * (mask_pred > 0).flatten(1)).sum(1) / ((mask_pred > 0).flatten(1).sum(1) + 1e-6)
+        # print(mask_scores.shape)
+        scores = F.softmax(mask_cls, dim=-1)[:, :-1] #* mask_scores[:, None]
+
         labels = torch.arange(
             self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
         # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
+
+        # s1, topk_indices2 = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False) 
+        # topk_indices2 = topk_indices2 // self.sem_seg_head.num_classes
+
+        # for i in range(scores.shape[0]):
+        #     scores_per_image_i, topk_indices_i = scores[i].topk(5, sorted=False)
+        #     scores[i][topk_indices_i] += 1000
+            # topk_indices_i += i * self.sem_seg_head.num_classes
+            # if (scores_per_image is None):
+            #     scores_per_image = scores_per_image_i
+            #     topk_indices = topk_indices_i
+            # else:
+            #     scores_per_image = torch.cat((scores_per_image, scores_per_image_i))
+            #     topk_indices = torch.cat((topk_indices, topk_indices_i))
+        
         scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
         labels_per_image = labels[topk_indices]
 
         topk_indices = topk_indices // self.sem_seg_head.num_classes
         # mask_pred = mask_pred.unsqueeze(1).repeat(1, self.sem_seg_head.num_classes, 1).flatten(0, 1)
         mask_pred = mask_pred[topk_indices]
+        # print(scores_per_image)
+        # scores_per_image = scores_per_image - 1000
+        # print(topk_indices)
+        # print(topk_indices2)
+        # scores, labels = F.softmax(mask_cls, dim=-1).max(-1)
+        
+        # topk_indices = labels != 80
+        # scores_per_image = scores[topk_indices]
+        # labels_per_image = labels[topk_indices]
+        # mask_pred = mask_pred[topk_indices]
 
         # if this is panoptic segmentation, we only keep the "thing" classes
         if self.panoptic_on:
@@ -385,4 +452,42 @@ class MaskFormer(nn.Module):
             result.pred_masks.flatten(1).sum(1) + 1e-6)
         result.scores = scores_per_image * mask_scores_per_image
         result.pred_classes = labels_per_image
+
+        # result.scores, scores_indices = torch.sort(result.scores, descending=True, dim = 0)
+        # result.pred_masks = result.pred_masks[scores_indices]
+        # result.pred_classes = result.pred_classes[scores_indices]
+        # cnt = 0
+        # for i in range(result.scores.shape[0]):
+        #     if result.scores[i] > 0:
+        #         for j in range(i+1, result.scores.shape[0]):
+        #             if result.scores[j] > 0 and result.scores[j] < 0.05 and result.pred_classes[i] == result.pred_classes[j]:
+        #                 maski = (result.pred_masks[i] > 0).flatten(0)
+        #                 maskj = (result.pred_masks[j] > 0).flatten(0)
+        #                 iou = (maski * maskj).sum(0) / (maski.sum(0) + maskj.sum(0) - (maski * maskj).sum(0) + 1e-6)
+        #                 if (iou > 0.5):
+        #                     cnt += 1
+        #                     result.scores[j] = 0
+        #             if result.scores[j] > 0 and result.scores[j] > 0.05 and result.pred_classes[i] == result.pred_classes[j]:
+        #                 maski = (result.pred_masks[i] > 0).flatten(0)
+        #                 maskj = (result.pred_masks[j] > 0).flatten(0)
+        #                 iou = (maski * maskj).sum(0) / (maski.sum(0) + maskj.sum(0) - (maski * maskj).sum(0) + 1e-6)
+        #                 if (iou > 0.85):
+        #                     cnt += 1
+        #                     result.scores[j] = 0
+        # result.scores, scores_indices = torch.sort(result.scores, descending=True, dim = 0)
+        # result.pred_masks = result.pred_masks[scores_indices]
+        # result.pred_classes = result.pred_classes[scores_indices]
+        # result2 = Instances(image_size)
+        # # print(result.pred_masks.size(0))
+        # for i in range(result.scores.shape[0]):
+        #     if (i > 1 and result.scores[i] == 0) or i == result.scores.shape[0] - 1:
+        #         result2.scores = result.scores[:i]
+        #         result2.pred_masks = result.pred_masks[:i]
+        #         result2.pred_classes = result.pred_classes[:i]
+        #         result2.pred_boxes = Boxes(torch.zeros(result2.pred_masks.size(0), 4))
+        #         break
+        # print(cnt, result2.scores.size(0))
+        # # print(result.scores)
+        # # print(result.pred_classes)
+        # del result
         return result

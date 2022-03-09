@@ -114,26 +114,42 @@ class SetCriterion(nn.Module):
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
-    def loss_labels(self, outputs, targets, indices, num_masks):
+    def loss_labels(self, outputs, targets, indices, num_masks, indices_class):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
         assert "pred_logits" in outputs
         src_logits = outputs["pred_logits"].float()
 
+        # print('indices', indices)
+        # print('indices_class', indices_class)
+        idx_class = self._get_src_permutation_idx(indices_class)
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices_class)])
+        target_classes = torch.full(
+            src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
+        )
+        target_classes[idx_class] = target_classes_o
+        # print('loss_class', F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight))
+
+        loss_bestce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight).detach()
+        # losses = {"loss_ce": loss_ce}
         idx = self._get_src_permutation_idx(indices)
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
         target_classes = torch.full(
             src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
         )
         target_classes[idx] = target_classes_o
+        # print('loss_ori', F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight))
+
+
+
         # print('pred', src_logits.transpose(1, 2))
         # print('gt', target_classes)
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        losses = {"loss_ce": loss_ce}
+        losses = {"loss_ce": loss_ce, "loss_bestce": loss_bestce}
         return losses
     
-    def loss_masks(self, outputs, targets, indices, num_masks):
+    def loss_masks(self, outputs, targets, indices, num_masks, indices_class):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
@@ -198,13 +214,13 @@ class SetCriterion(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def get_loss(self, loss, outputs, targets, indices, num_masks):
+    def get_loss(self, loss, outputs, targets, indices, num_masks, indices_class):
         loss_map = {
             'labels': self.loss_labels,
             'masks': self.loss_masks,
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
-        return loss_map[loss](outputs, targets, indices, num_masks)
+        return loss_map[loss](outputs, targets, indices, num_masks, indices_class)
 
     def forward(self, outputs, targets):
         """This performs the loss computation.
@@ -216,7 +232,7 @@ class SetCriterion(nn.Module):
         outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(outputs_without_aux, targets)
+        indices, indices_class = self.matcher(outputs_without_aux, targets)
         
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
@@ -231,7 +247,7 @@ class SetCriterion(nn.Module):
         # print('Final')
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks))
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, indices_class))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
@@ -239,9 +255,9 @@ class SetCriterion(nn.Module):
                 # print(i, ' layer')
                 # if i > 1:
                 #     exit(0)
-                indices = self.matcher(aux_outputs, targets)
+                indices, indices_class = self.matcher(aux_outputs, targets)
                 for loss in self.losses:
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, indices_class)
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)
 

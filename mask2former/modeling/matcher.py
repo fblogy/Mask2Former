@@ -91,7 +91,7 @@ class HungarianMatcher(nn.Module):
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
         indices = []
-
+        indices_class = []
         # Iterate through batch size
         for b in range(bs):
 
@@ -180,7 +180,13 @@ class HungarianMatcher(nn.Module):
                 + self.cost_class * cost_class
                 + self.cost_dice * cost_dice
             )
-            
+            C_class = (
+                cost_class
+            )
+            C_class = C_class.reshape(num_queries, -1).cpu()
+            indices_class.append(linear_sum_assignment(C_class))
+
+
             C = C.reshape(num_queries, -1).cpu()
             # C_mask = C_mask.reshape(num_queries, -1).cpu().numpy()
             # C_Dice = C_Dice.reshape(num_queries, -1).cpu().numpy()
@@ -215,6 +221,9 @@ class HungarianMatcher(nn.Module):
         return [
             (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
             for i, j in indices
+        ],[
+            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            for i, j in indices_class
         ]
 
     @torch.no_grad()
