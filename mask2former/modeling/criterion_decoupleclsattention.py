@@ -295,7 +295,7 @@ class SetCriterion_Decouple(nn.Module):
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
-    def loss_labels(self, outputs, targets, indices, num_masks, loc_match_indices):
+    def loss_labels(self, outputs, targets, indices, num_masks, loc_match_indices, affinity_weights, affinity_labels ):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
@@ -337,36 +337,24 @@ class SetCriterion_Decouple(nn.Module):
         losses = {"loss_ce": loss_ce}
         return losses
 
-    def loss_ranks(self, outputs, targets, indices, num_masks, loc_match_indices):
+    def loss_affinitys(self, outputs, targets, indices, num_masks, loc_match_indices, affinity_weights, affinity_labels):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
-        assert "pred_ranks" in outputs
-        src_logits = outputs["pred_ranks"].float() #[B, N, 1]
-        # print('src_logits', src_logits.shape)
-        idx = self._get_src_permutation_idx(loc_match_indices)
-        # print('idx', idx)
-        # print('loc_match_indices', loc_match_indices)
-        # for t, (_, J) in zip(targets, loc_match_indices):
-        #     print('t', t)
-        #     print('_', _)
-        #     print('J', J)
-        target_classes_o = torch.cat([t["labels"][J] * 0 for t, (_, J) in zip(targets, loc_match_indices)])
-        # print('target_classes_o', target_classes_o)
-        
-        target_classes = torch.full(src_logits.shape[:2], 1, dtype=torch.int64, device=src_logits.device)
-        target_classes[idx] = target_classes_o
+        assert "pred_affinitys" in outputs
+        src_logits = outputs["pred_affinitys"].float() #[B, N, N]
 
 
 
         # loss_bce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        loss_bce = F.binary_cross_entropy_with_logits(src_logits, target_classes[:, :, None].float())
-        losses = {"loss_rank": loss_bce}
+        loss_bce = F.binary_cross_entropy_with_logits(src_logits, affinity_labels, reduction="none")
+        loss_bce = torch.sum(loss_bce * affinity_weights) / torch.sum(affinity_weights)
+        losses = {"loss_affinity": loss_bce}
         return losses
 
 
 
-    def loss_masks(self, outputs, targets, indices, num_masks, loc_match_indices):
+    def loss_masks(self, outputs, targets, indices, num_masks, loc_match_indices, affinity_weights, affinity_labels ):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
@@ -459,14 +447,14 @@ class SetCriterion_Decouple(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def get_loss(self, loss, outputs, targets, indices, num_masks, loc_match_indices):
+    def get_loss(self, loss, outputs, targets, indices, num_masks, loc_match_indices, affinity_weights, affinity_labels ):
         loss_map = {
             'labels': self.loss_labels,
             'masks': self.loss_masks,
-            'ranks': self.loss_ranks,
+            'affinitys': self.loss_affinitys,
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
-        return loss_map[loss](outputs, targets, indices, num_masks, loc_match_indices)
+        return loss_map[loss](outputs, targets, indices, num_masks, loc_match_indices, affinity_weights, affinity_labels )
 
     def forward(self, outputs, targets):
         """This performs the loss computation.
@@ -481,7 +469,7 @@ class SetCriterion_Decouple(nn.Module):
 
         # list of pair
         # t = time.time()
-        indices, loc_match_indices = self.matcher(outputs_without_aux, targets)
+        indices, loc_match_indices, affinity_weights, affinity_labels = self.matcher(outputs_without_aux, targets)
         # print('matcher', (time.time() - t))
         # print(indices)
         # print(loc_match_indices)
@@ -499,14 +487,14 @@ class SetCriterion_Decouple(nn.Module):
         # Compute all the requested losses
         losses = {}
         for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, loc_match_indices))
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks, loc_match_indices, affinity_weights, affinity_labels))
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
-                indices, loc_match_indices = self.matcher(aux_outputs, targets)
+                indices, loc_match_indices, affinity_weights, affinity_labels  = self.matcher(aux_outputs, targets)
                 for loss in self.losses:
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, loc_match_indices)
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks, loc_match_indices, affinity_weights, affinity_labels )
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)
 

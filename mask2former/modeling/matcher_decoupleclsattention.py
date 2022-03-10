@@ -3,6 +3,7 @@
 """
 Modules to compute the matching cost and solve the corresponding LSAP.
 """
+from inspect import stack
 from matplotlib.pyplot import axis
 import torch
 import torch.nn.functional as F
@@ -282,6 +283,8 @@ class HungarianMatcher_Decouple(nn.Module):
 
         indices = []
         loc_indices = []
+        affinity_weights = []
+        affinity_labels = []
         # Iterate through batch size
         for b in range(bs):
 
@@ -358,6 +361,16 @@ class HungarianMatcher_Decouple(nn.Module):
             loc_match_result = linear_sum_assignment(C_loc)
             loc_indices.append(loc_match_result)
 
+            affinity_weight = torch.zeros((C_class.shape[0], C_class.shape[0])).cuda()
+            affinity_label = torch.zeros((C_class.shape[0], C_class.shape[0])).cuda()
+            num = len(match_result[0])
+            for i in range(num):
+                for j in range(num):
+                    affinity_weight[match_result[0][i]][loc_match_result[0][j]] = 1
+                    if tgt_ids[match_result[1][i]] == tgt_ids[loc_match_result[1][j]]:
+                         affinity_label[match_result[0][i]][loc_match_result[0][j]] = 1
+            affinity_weights.append(affinity_weight)
+            affinity_labels.append(affinity_label)
             # if (C.shape[1] > 0):
             #     mincostdice, ind = torch.min(cost_dice, dim = 1)
             #     mingtcostdice, indquery = torch.min(cost_dice, dim = 0)
@@ -397,7 +410,7 @@ class HungarianMatcher_Decouple(nn.Module):
             # print('indices', indices[0])
             # print(type(indices[0][0]))
         # return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
-        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices], [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in loc_indices]
+        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices], [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in loc_indices], torch.stack(affinity_weights, dim = 0), torch.stack(affinity_labels, dim = 0)
     @torch.no_grad()
     def forward(self, outputs, targets):
         """Performs the matching

@@ -115,7 +115,7 @@ class MaskFormerDecoupleClsAttention(nn.Module):
             num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
         )
 
-        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
+        weight_dict = {"loss_ce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_affinity": class_weight}
 
         if deep_supervision:
             dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS
@@ -124,7 +124,7 @@ class MaskFormerDecoupleClsAttention(nn.Module):
                 aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
             weight_dict.update(aux_weight_dict)
 
-        losses = ["labels", "masks"]
+        losses = ["labels", "masks", "affinitys"]
 
         criterion = SetCriterion_Decouple(
             sem_seg_head.num_classes,
@@ -230,6 +230,8 @@ class MaskFormerDecoupleClsAttention(nn.Module):
         else:
             mask_cls_results = outputs["pred_logits"]
             mask_pred_results = outputs["pred_masks"]
+            attention_weights = outputs["pred_attweight"]
+            # affinity_results = outputs["pred_affinitys"]
             # upsample masks
             mask_pred_results = F.interpolate(
                 mask_pred_results,
@@ -241,8 +243,8 @@ class MaskFormerDecoupleClsAttention(nn.Module):
             del outputs
 
             processed_results = []
-            for mask_cls_result, mask_pred_result, input_per_image, image_size in zip(
-                    mask_cls_results, mask_pred_results, batched_inputs, images.image_sizes):
+            for mask_cls_result, mask_pred_result, attention_weight, input_per_image, image_size in zip(
+                    mask_cls_results, mask_pred_results, attention_weights, batched_inputs, images.image_sizes):
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
                 processed_results.append({})
@@ -266,7 +268,7 @@ class MaskFormerDecoupleClsAttention(nn.Module):
 
                 # instance segmentation inference
                 if self.instance_on:
-                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result)
+                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, attention_weight)
                     processed_results[-1]["instances"] = instance_r
 
             return processed_results
@@ -347,18 +349,38 @@ class MaskFormerDecoupleClsAttention(nn.Module):
 
             return panoptic_seg, segments_info
 
-    def instance_inference(self, mask_cls, mask_pred):
+    def instance_inference(self, mask_cls, mask_pred, attention_weight):
         # mask_pred is already processed to have the same shape as original input
         image_size = mask_pred.shape[-2:]
 
+        # attention_weight [Q, Q] cls, mask
+        # indices = torch.argmax(attention_weight, dim = 1)
+        # # for i in range(5):
+        # #     print(attention_weight[i])
+        # # print('indices', indices)
+        # mask_pred = mask_pred[indices]
+        # lb = torch.argmax(F.softmax(mask_cls, dim=-1), dim = -1)
+        # print('label', lb[(lb != 80)].numel())
+        # print(attention_weight[:, 0])
+        
+        # scores_query = F.softmax(mask_cls, dim=-1)[:, :-1]
+        # print(scores_query[:, 0])
+        # print(torch.sum(attention_weight[:, 0] * scores_query[:, 0], dim = 0))
+        # print(torch.max(attention_weight, dim=1)[0])
+        # scores = torch.einsum('nm,nc->mc', attention_weight, scores_query)
+        # print(scores[0])
+
         # [Q, K]
         scores = F.softmax(mask_cls, dim=-1)[:, :-1]
+        
+        # scores
+
         labels = torch.arange(
             self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
         # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
         scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
         labels_per_image = labels[topk_indices]
-
+        # print(scores_per_image)
         topk_indices = topk_indices // self.sem_seg_head.num_classes
         # mask_pred = mask_pred.unsqueeze(1).repeat(1, self.sem_seg_head.num_classes, 1).flatten(0, 1)
         mask_pred = mask_pred[topk_indices]
