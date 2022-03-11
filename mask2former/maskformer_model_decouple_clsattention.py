@@ -1,5 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 from typing import Tuple
+from numpy import indices
 
 import torch
 from torch import nn
@@ -15,7 +16,7 @@ from detectron2.utils.memory import retry_if_cuda_oom
 
 from .modeling.criterion_decoupleclsattention import SetCriterion_Decouple
 from .modeling.matcher_decoupleclsattention import HungarianMatcher_Decouple
-
+from scipy.optimize import linear_sum_assignment
 
 @META_ARCH_REGISTRY.register()
 class MaskFormerDecoupleClsAttention(nn.Module):
@@ -231,7 +232,7 @@ class MaskFormerDecoupleClsAttention(nn.Module):
             mask_cls_results = outputs["pred_logits"]
             mask_pred_results = outputs["pred_masks"]
             attention_weights = outputs["pred_attweight"]
-            # affinity_results = outputs["pred_affinitys"]
+            affinity_results = outputs["pred_affinitys"]
             # upsample masks
             mask_pred_results = F.interpolate(
                 mask_pred_results,
@@ -243,8 +244,8 @@ class MaskFormerDecoupleClsAttention(nn.Module):
             del outputs
 
             processed_results = []
-            for mask_cls_result, mask_pred_result, attention_weight, input_per_image, image_size in zip(
-                    mask_cls_results, mask_pred_results, attention_weights, batched_inputs, images.image_sizes):
+            for mask_cls_result, mask_pred_result, attention_weight, affinity_result, input_per_image, image_size in zip(
+                    mask_cls_results, mask_pred_results, attention_weights, affinity_results, batched_inputs, images.image_sizes):
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
                 processed_results.append({})
@@ -268,7 +269,7 @@ class MaskFormerDecoupleClsAttention(nn.Module):
 
                 # instance segmentation inference
                 if self.instance_on:
-                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, attention_weight)
+                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, attention_weight, affinity_result)
                     processed_results[-1]["instances"] = instance_r
 
             return processed_results
@@ -349,9 +350,11 @@ class MaskFormerDecoupleClsAttention(nn.Module):
 
             return panoptic_seg, segments_info
 
-    def instance_inference(self, mask_cls, mask_pred, attention_weight):
+    def instance_inference(self, mask_cls, mask_pred, attention_weight, affinity_result):
         # mask_pred is already processed to have the same shape as original input
         image_size = mask_pred.shape[-2:]
+
+
 
         # attention_weight [Q, Q] cls, mask
         # indices = torch.argmax(attention_weight, dim = 1)
@@ -371,19 +374,45 @@ class MaskFormerDecoupleClsAttention(nn.Module):
         # print(scores[0])
 
         # [Q, K]
-        scores = F.softmax(mask_cls, dim=-1)[:, :-1]
-        
-        # scores
+        # scores = F.softmax(mask_cls, dim=-1)[:, :-1]
 
-        labels = torch.arange(
-            self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
-        # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
-        scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
+        # # scores
+
+        # labels = torch.arange(
+        #     self.sem_seg_head.num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
+        # # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
+        # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
+        # labels_per_image = labels[topk_indices]
+        # # print(scores_per_image)
+        # topk_indices = topk_indices // self.sem_seg_head.num_classes
+        # # mask_pred = mask_pred.unsqueeze(1).repeat(1, self.sem_seg_head.num_classes, 1).flatten(0, 1)
+        # mask_pred = mask_pred[topk_indices]
+
+
+        scores, labels = F.softmax(mask_cls, dim=-1).max(-1)
+        
+        topk_indices = labels != 80
+        affinity_result = -affinity_result.sigmoid()
+        affinity_result[topk_indices] *= scores[topk_indices][:, None]
+        # print(scores[topk_indices])
+        # print(labels[topk_indices])
+        # torch.set_printoptions(precision=3, sci_mode=False)
+        # print(affinity_result[topk_indices])
+        
+        # print(affinity_result[topk_indices].shape)
+        indices = linear_sum_assignment(affinity_result[topk_indices].cpu().numpy())
+        # print(indices)
+        select_mask_indices = torch.as_tensor(indices[1], dtype=torch.int64)
+
+        scores_per_image = scores[topk_indices]
         labels_per_image = labels[topk_indices]
-        # print(scores_per_image)
-        topk_indices = topk_indices // self.sem_seg_head.num_classes
-        # mask_pred = mask_pred.unsqueeze(1).repeat(1, self.sem_seg_head.num_classes, 1).flatten(0, 1)
-        mask_pred = mask_pred[topk_indices]
+        mask_pred = mask_pred[select_mask_indices]
+
+
+
+
+
+
 
         # if this is panoptic segmentation, we only keep the "thing" classes
         if self.panoptic_on:
