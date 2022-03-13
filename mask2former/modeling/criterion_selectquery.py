@@ -109,7 +109,10 @@ class SetCriterion_SelectQuery(nn.Module):
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
         self.register_buffer("empty_weight", empty_weight)
-
+        encoder_empty_weight = torch.ones(self.num_classes + 1)
+        encoder_empty_weight[-1] = self.eos_coef * 0.01
+        # self.encoder_empty_weight = encoder_empty_weight
+        self.register_buffer("encoder_empty_weight", encoder_empty_weight)
         # pointwise mask loss parameters
         self.num_points = num_points
         self.oversample_ratio = oversample_ratio
@@ -154,10 +157,10 @@ class SetCriterion_SelectQuery(nn.Module):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
-        assert "pred_logits" in outputs
-        src_logits = outputs["pred_logits"].float()
-
-
+        assert "pred_encoder_logits" in outputs
+        src_logits = outputs["pred_encoder_logits"].float()
+        # print(src_logits.shape)
+        # print(indices_encoder)
 
         # losses = {"loss_ce": loss_ce}
         idx = self._get_src_permutation_idx(indices_encoder)
@@ -169,10 +172,10 @@ class SetCriterion_SelectQuery(nn.Module):
         # print('loss_ori', F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight))
 
 
-
+        # print(self.encoder_empty_weight)
         # print('pred', src_logits.transpose(1, 2))
         # print('gt', target_classes)
-        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight * 0.1)
+        loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.encoder_empty_weight)
         losses = {"loss_encoder_ce": loss_ce}
         return losses
 

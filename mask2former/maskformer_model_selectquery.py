@@ -125,7 +125,7 @@ class MaskFormerSelectQuery(nn.Module):
             num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
         )
 
-        weight_dict = {"loss_ce": class_weight, "loss_encoder_ce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
+        weight_dict = {"loss_ce": class_weight, "loss_encoder_ce": 5, "loss_mask": mask_weight, "loss_dice": dice_weight}
 
         if deep_supervision:
             dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS

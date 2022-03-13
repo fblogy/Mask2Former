@@ -284,13 +284,13 @@ class HungarianMatcher_Encoder(nn.Module):
     @torch.no_grad()
     def memory_efficient_forward(self, outputs, targets):
         """More memory-friendly matching"""
-        bs, num_queries = outputs["pred_logits"].shape[:2]
+        bs, num_queries = outputs["pred_encoder_logits"].shape[:2]
 
         indices = []
         # Iterate through batch size
         for b in range(bs):
 
-            out_prob = outputs["pred_logits"][b].softmax(-1)  # [num_queries, num_classes]
+            out_prob = outputs["pred_encoder_logits"][b].softmax(-1)  # [num_queries, num_classes]
             # pred = []
             # pred_prob = []
             # for i in range(out_prob.shape[0]):
