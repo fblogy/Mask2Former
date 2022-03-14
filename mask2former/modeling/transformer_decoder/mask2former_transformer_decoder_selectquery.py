@@ -331,6 +331,8 @@ class MultiScaleTransformerDecoderSelectQuery(nn.Module):
         if self.mask_classification:
             self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
         self.mask_embed = MLP(hidden_dim, hidden_dim, mask_dim, 3)
+        self.encoder_cls_trans = nn.Linear(hidden_dim, hidden_dim)
+        self.encoder_mask_trans = nn.Linear(hidden_dim, hidden_dim)
 
     @classmethod
     def from_config(cls, cfg, in_channels, mask_classification):
@@ -388,10 +390,13 @@ class MultiScaleTransformerDecoderSelectQuery(nn.Module):
         _, bs, _ = src[0].shape
 
 
-        encoder_feature = src[-1] #[HW,B,C]
-        encoder_feature_norm = self.decoder_norm(encoder_feature).transpose(0, 1) #[B, HW, C]
+        encoder_feature_class = self.decoder_norm(self.encoder_cls_trans(src[-1])) #[HW,B,C]
+
+        encoder_feature_mask = self.decoder_norm(self.encoder_mask_trans(src[-1]))
+
+        # encoder_feature_norm = self.decoder_norm(encoder_feature).transpose(0, 1) #[B, HW, C]
         
-        encoder_output_class = self.class_embed(encoder_feature_norm) #[B, HW, cls]
+        encoder_output_class = self.class_embed(encoder_feature_class.transpose(0, 1)) #[B, HW, cls]
 
         scores = F.softmax(encoder_output_class, dim=-1)[:, :, :-1].flatten(1, 2)
         scores, indices = torch.topk(scores, k=self.query_embed.weight.shape[0], dim=1, sorted=True)
@@ -403,7 +408,7 @@ class MultiScaleTransformerDecoderSelectQuery(nn.Module):
         # print((batch_idx, src_idx))
         # print(indices.shape)
         # print(encoder_feature.transpose(0, 1).shape)
-        output = encoder_feature.transpose(0, 1)[(batch_idx, src_idx)].view(bs, self.query_embed.weight.shape[0], -1) #[B, N, C]
+        output = encoder_feature_mask.transpose(0, 1)[(batch_idx, src_idx)].view(bs, self.query_embed.weight.shape[0], -1) #[B, N, C]
         # print()
         # print(output.shape)
         # exit(0)
