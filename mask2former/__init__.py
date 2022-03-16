@@ -24,6 +24,7 @@ from .maskformer_model_decouple import MaskFormerDecouple
 from .maskformer_model_matcherdwsp import MaskFormerMatcherDwsp
 from .maskformer_model_decouple_clsattention import MaskFormerDecoupleClsAttention
 from .maskformer_model_selectquery import MaskFormerSelectQuery
+from .maskformer_model_focalloss import MaskFormerFocal
 
 from .maskformer_model_direction import MaskFormerDirection
 from .test_time_augmentation import SemanticSegmentorWithTTA
