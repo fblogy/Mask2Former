@@ -117,8 +117,8 @@ class MaskFormerZigZagPE(nn.Module):
         )
 
         # weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
-        # weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_cardinality_error":0.0001, "loss_class_error":0.0001}
-        weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_cardinality_error":1, "loss_class_error":1}
+        weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_cardinality_error":0.0001, "loss_class_error":0.0001}
+        # weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_cardinality_error":1, "loss_class_error":1}
 
         if deep_supervision:
             dec_layers = cfg.MODEL.MASK_FORMER.DEC_LAYERS
