@@ -15,7 +15,7 @@ from detectron2.projects.point_rend.point_features import (
     point_sample,
 )
 
-from ..utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
+from ..utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list, accuracy
 
 
 def dice_loss(
@@ -114,7 +114,7 @@ class SetCriterion(nn.Module):
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
-    def loss_labels(self, outputs, targets, indices, num_masks, indices_class):
+    def loss_labels(self, outputs, targets, indices, num_masks, indices_class, log=True):
         """Classification loss (NLL)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
@@ -147,6 +147,10 @@ class SetCriterion(nn.Module):
         # print('gt', target_classes)
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
         losses = {"loss_ce": loss_ce, "loss_bestce": loss_bestce}
+        if log:
+            # TODO this should probably be a separate loss, not hacked in this one here
+            losses['loss_class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]
+            # losses['loss_class_error'] = 100 - accuracy(src_logits[idx_class], target_classes_o)[0]
         return losses
     
     def loss_masks(self, outputs, targets, indices, num_masks, indices_class):
@@ -202,6 +206,21 @@ class SetCriterion(nn.Module):
         del target_masks
         return losses
 
+
+    @torch.no_grad()
+    def loss_cardinality(self, outputs, targets, indices, num_boxes, indices_class):
+        """ Compute the cardinality error, ie the absolute error in the number of predicted non-empty boxes
+        This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients
+        """
+        pred_logits = outputs['pred_logits']
+        device = pred_logits.device
+        tgt_lengths = torch.as_tensor([len(v["labels"]) for v in targets], device=device)
+        # Count the number of predictions that are NOT "no-object" (which is the last class)
+        card_pred = (pred_logits.argmax(-1) != pred_logits.shape[-1] - 1).sum(1)
+        card_err = F.l1_loss(card_pred.float(), tgt_lengths.float())
+        losses = {'loss_cardinality_error': card_err}
+        return losses
+
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
         batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
@@ -218,6 +237,7 @@ class SetCriterion(nn.Module):
         loss_map = {
             'labels': self.loss_labels,
             'masks': self.loss_masks,
+            'counts': self.loss_cardinality,
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_masks, indices_class)
