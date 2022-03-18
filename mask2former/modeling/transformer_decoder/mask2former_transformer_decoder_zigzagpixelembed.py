@@ -411,10 +411,12 @@ class MultiScaleTransformerDecoderZigZagPE(nn.Module):
                 level_index = 2
             if (i == 6):
                 mask = (predictions_mask[-1] > 0).float()
-                region_feats = torch.einsum('bchw,bqhw->qbc', mask_features, mask)
+                region_feats = torch.einsum('bchw,bqhw->bqc', mask_features, mask)
                 region_feats = F.layer_norm(region_feats, [
                     region_feats.shape[-1],
                 ])
+                # print(mask_features.shape)
+                # print(mask.shape)
                 enhance_feats = torch.einsum('bqc,bqhw->bchw', region_feats, mask)
                 mask_features = torch.cat((mask_features, enhance_feats), dim = 1)
                 mask_features = self.merge_mask_feats(mask_features)
