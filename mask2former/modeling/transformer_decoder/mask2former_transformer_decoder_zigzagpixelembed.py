@@ -1,6 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # Modified by Bowen Cheng from: https://github.com/facebookresearch/detr/blob/master/models/detr.py
 import logging
+from pickletools import optimize
 import fvcore.nn.weight_init as weight_init
 from typing import Optional
 import torch
@@ -394,18 +395,17 @@ class MultiScaleTransformerDecoderZigZagPE(nn.Module):
 
         predictions_class = []
         predictions_mask = []
-        predictions_mask_enhance = []
         # cc = self.transformer_cross_attention_layers[0].multihead_attn.in_proj_weight
         # print(cc.shape)
         # print(src[0] * cc[-256:, :])
         # print(torch.argmax(self.class_embed(self.decoder_norm(src[0] * cc[-256:, :])), dim = -1).cpu().numpy())
         # print(src[0].shape)
         # prediction heads on learnable query features
-        outputs_class, outputs_mask, attn_mask, outputs_mask_enhance = self.forward_prediction_heads(
-            output, mask_features, attn_mask_target_size=size_list[0])
+        zero_mask = torch.zeros((bs, output.shape[0], mask_features.shape[-2], mask_features.shape[-1]), device=mask_features.device)
+        outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
+            output, mask_features, attn_mask_target_size=size_list[0], pre_mask=zero_mask)
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
-        predictions_mask_enhance.append(outputs_mask_enhance)
 
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
@@ -443,49 +443,46 @@ class MultiScaleTransformerDecoderZigZagPE(nn.Module):
             # FFN
             output = self.transformer_ffn_layers[i](output)
             if i < 5:
-                outputs_class, outputs_mask, attn_mask, outputs_mask_enhance = self.forward_prediction_heads(
-                    output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])
+                outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
+                    output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels], pre_mask = predictions_mask[-1])
             else:
-                outputs_class, outputs_mask, attn_mask, outputs_mask_enhance = self.forward_prediction_heads(
-                    output, mask_features, attn_mask_target_size=size_list[2])
+                outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
+                    output, mask_features, attn_mask_target_size=size_list[2], pre_mask = predictions_mask[-1])
             predictions_class.append(outputs_class)
             predictions_mask.append(outputs_mask)
-            predictions_mask_enhance.append(outputs_mask_enhance)
 
         assert len(predictions_class) == self.num_layers + 1
 
         out = {
             'pred_logits': predictions_class[-1],
             'pred_masks': predictions_mask[-1],
-            'pred_masks_enhance': predictions_mask_enhance[-1],
-            'aux_outputs': self._set_aux_loss(predictions_class if self.mask_classification else None, predictions_mask, predictions_mask_enhance)
+            'aux_outputs': self._set_aux_loss(predictions_class if self.mask_classification else None, predictions_mask)
         }
         return out
 
-    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, use_merge=False):
+    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, pre_mask):
         decoder_output = self.decoder_norm(output)
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
         
         mask_embed = self.mask_embed(decoder_output)
 
-        outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
-        mask = (outputs_mask > 0).float()
+        mask = (pre_mask > 0).float()
         enhance_feats = torch.einsum('bqc,bqhw->bhwc', decoder_output, mask)
         enhance_feats = self.decoder_norm(enhance_feats).permute(0,3,1,2)
         enhance_mask_features = torch.cat((mask_features, enhance_feats), dim = 1)
         enhance_mask_features = self.merge_mask_feats(enhance_mask_features)
-        outputs_mask_enhance = torch.einsum("bqc,bchw->bqhw", mask_embed, enhance_mask_features)
+        outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, enhance_mask_features)
 
-        return outputs_class, outputs_mask, None, outputs_mask_enhance
+        return outputs_class, outputs_mask, None
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_seg_masks, outputs_mask_enhance):
+    def _set_aux_loss(self, outputs_class, outputs_seg_masks):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
         if self.mask_classification:
-            return [{"pred_logits": a, "pred_masks": b, "pred_masks_enhance": c} for a, b, c in zip(outputs_class[:-1], outputs_seg_masks[:-1], outputs_mask_enhance[:-1])]
+            return [{"pred_logits": a, "pred_masks": b} for a, b in zip(outputs_class[:-1], outputs_seg_masks[:-1])]
         else:
             return [{"pred_masks": b} for b in outputs_seg_masks[:-1]]
 
@@ -493,21 +490,23 @@ class MultiScaleTransformerDecoderZigZagPE(nn.Module):
 @TRANSFORMER_DECODER_REGISTRY.register()
 class MultiScaleMaskedTransformerDecoderZigZagPE(MultiScaleTransformerDecoderZigZagPE):
 
-    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, use_merge=False):
+    def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, pre_mask):
         decoder_output = self.decoder_norm(output)
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
             
         mask_embed = self.mask_embed(decoder_output)
-        outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
-        mask = (outputs_mask > 0).float()
-        enhance_feats = torch.einsum('bqc,bqhw->bhwc', decoder_output, mask)
+
+        # outputs_mask = pre_mask
+        mask = (pre_mask > 0).float()
+        enhance_feats = torch.einsum('bqc,bqhw->bhwc', decoder_output.detach(), mask)
         enhance_feats = self.decoder_norm(enhance_feats).permute(0,3,1,2)
         enhance_mask_features = torch.cat((mask_features, enhance_feats), dim = 1)
+        # # enhance_mask_features = torch.cat((mask_features, mask_features), dim = 1)
         enhance_mask_features = self.merge_mask_feats(enhance_mask_features)
-        outputs_mask_enhance = torch.einsum("bqc,bchw->bqhw", mask_embed, enhance_mask_features)
-
+        outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, enhance_mask_features)
+        # outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
 
         # print(torch.sum((outputs_mask > 0)))
@@ -520,4 +519,4 @@ class MultiScaleMaskedTransformerDecoderZigZagPE(MultiScaleTransformerDecoderZig
                      0.5).bool()
         attn_mask = attn_mask.detach()
 
-        return outputs_class, outputs_mask, attn_mask, outputs_mask_enhance
+        return outputs_class, outputs_mask, attn_mask

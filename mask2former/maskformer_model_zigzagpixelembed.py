@@ -13,8 +13,8 @@ from detectron2.modeling.postprocessing import sem_seg_postprocess
 from detectron2.structures import Boxes, ImageList, Instances, BitMasks
 from detectron2.utils.memory import retry_if_cuda_oom
 
-from .modeling.criterion_zigzagpe import SetCriterion
-from .modeling.matcher_zigzagpe import HungarianMatcher
+from .modeling.criterion import SetCriterion
+from .modeling.matcher import HungarianMatcher
 import time
 
 @META_ARCH_REGISTRY.register()
@@ -117,7 +117,7 @@ class MaskFormerZigZagPE(nn.Module):
         )
 
         # weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
-        weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_mask_eh": mask_weight, "loss_dice_eh": dice_weight, "loss_cardinality_error":0.0001, "loss_class_error":0.0001}
+        weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_cardinality_error":0.0001, "loss_class_error":0.0001}
         # weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_cardinality_error":1, "loss_class_error":1}
 
         if deep_supervision:
@@ -233,8 +233,7 @@ class MaskFormerZigZagPE(nn.Module):
             return losses
         else:
             mask_cls_results = outputs["pred_logits"]
-            # mask_pred_results = outputs["pred_masks"]
-            mask_pred_results = outputs["pred_masks_enhance"]
+            mask_pred_results = outputs["pred_masks"]
             # upsample masks
             mask_pred_results = F.interpolate(
                 mask_pred_results,
