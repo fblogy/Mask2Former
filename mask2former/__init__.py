@@ -28,7 +28,7 @@ from .maskformer_model_focalloss import MaskFormerFocal
 from .maskformer_model_zigzagpixelembed import MaskFormerZigZagPE
 from .maskformer_model_clsSA import MaskFormerClsSA
 from .maskformer_model_replacedecouplecls import MaskFormerReplaceDecoupleClsAttention
-
+from .maskformer_model_iou import MaskFormerIou
 
 from .maskformer_model_direction import MaskFormerDirection
 from .test_time_augmentation import SemanticSegmentorWithTTA
