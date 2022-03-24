@@ -33,14 +33,14 @@ MODEL:
     COMMON_STRIDE: 4
     TRANSFORMER_ENC_LAYERS: 6
   MASK_FORMER:
-    TRANSFORMER_DECODER_NAME: "MultiScaleMaskedTransformerDecoderIou"
+    TRANSFORMER_DECODER_NAME: "MultiScaleMaskedTransformerDecoderIouDecouple"
     TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
     DEEP_SUPERVISION: True
     NO_OBJECT_WEIGHT: 0.1
     CLASS_WEIGHT: 2.0
     MASK_WEIGHT: 5.0
     DICE_WEIGHT: 5.0
-    IOU_WEIGHT: 30.0
+    IOU_WEIGHT: 2.0
     HIDDEN_DIM: 256
     NUM_OBJECT_QUERIES: 100
     NHEADS: 8

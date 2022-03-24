@@ -107,6 +107,7 @@ class MaskFormerIou(nn.Module):
         class_weight = cfg.MODEL.MASK_FORMER.CLASS_WEIGHT
         dice_weight = cfg.MODEL.MASK_FORMER.DICE_WEIGHT
         mask_weight = cfg.MODEL.MASK_FORMER.MASK_WEIGHT
+        iou_weight = cfg.MODEL.MASK_FORMER.IOU_WEIGHT
 
         # building criterion
         matcher = HungarianMatcher(
@@ -117,7 +118,7 @@ class MaskFormerIou(nn.Module):
         )
 
         # weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight}
-        weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_iou" : 30, "loss_cardinality_error":0.0001, "loss_class_error":0.0001}
+        weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_iou" : iou_weight, "loss_cardinality_error":0.0001, "loss_class_error":0.0001}
         # weight_dict = {"loss_ce": class_weight, "loss_bestce": class_weight, "loss_mask": mask_weight, "loss_dice": dice_weight, "loss_cardinality_error":1, "loss_class_error":1}
 
         if deep_supervision:
@@ -418,13 +419,16 @@ class MaskFormerIou(nn.Module):
         
         scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
         # scores_per_image, topk_indices = scores[99:].flatten(0, 1).topk(1, sorted=False)
-        labels_per_image = labels[topk_indices ]
+        labels_per_image = labels[topk_indices]
 
         topk_indices = topk_indices // self.sem_seg_head.num_classes
         # # mask_pred = mask_pred.unsqueeze(1).repeat(1, self.sem_seg_head.num_classes, 1).flatten(0, 1)
         mask_pred = mask_pred[topk_indices]
+
         mask_pred_iou = mask_pred_iou[topk_indices]
 
+        # mask_pred_iou[mask_pred_iou < 0.6] = 0.6
+        # scores_per_image[scores_per_image < 0.1] *= 0.01
         scores_per_image = scores_per_image * mask_pred_iou
 
         # indices = (scores_per_image < 0.5) * (scores_per_image > 0.1)
