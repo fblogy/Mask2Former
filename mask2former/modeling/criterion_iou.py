@@ -43,7 +43,7 @@ def dice_loss(
     # MSE_loss = nn.MSELoss(reduction="none")
     # print(src_iou.sigmoid()[:, 0])
     # print(iou)
-    loss_iou = F.mse_loss(src_iou.sigmoid()[:, 0], iou, reduction='none') #[matcher]
+    loss_iou = F.mse_loss(src_iou.sigmoid()[:, 0], iou.detach(), reduction='none') #[matcher]
     return loss.sum() / num_masks, loss_iou.sum() / num_masks
 
 
