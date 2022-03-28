@@ -30,6 +30,7 @@ from .maskformer_model_clsSA import MaskFormerClsSA
 from .maskformer_model_replacedecouplecls import MaskFormerReplaceDecoupleClsAttention
 from .maskformer_model_iou import MaskFormerIou
 from .maskformer_model_maskmatcher import MaskFormerMaskMatcher
+from .maskformer_model_decouplepos import MaskFormerDecouplePos
 
 from .maskformer_model_direction import MaskFormerDirection
 from .test_time_augmentation import SemanticSegmentorWithTTA
