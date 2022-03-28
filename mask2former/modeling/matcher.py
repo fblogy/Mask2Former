@@ -86,7 +86,7 @@ class HungarianMatcher(nn.Module):
         self.num_points = num_points
 
     @torch.no_grad()
-    def memory_efficient_forward(self, outputs, targets):
+    def memory_efficient_forward(self, outputs, targets, use_ds=False):
         """More memory-friendly matching"""
         bs, num_queries = outputs["pred_logits"].shape[:2]
 
@@ -126,33 +126,34 @@ class HungarianMatcher(nn.Module):
             out_mask = out_mask.float()
             tgt_mask = tgt_mask.float()
             # # all masks share the same set of points for efficient matching!
-            point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
-            # # get gt labels
-            tgt_mask = point_sample(
-                tgt_mask,
-                point_coords.repeat(tgt_mask.shape[0], 1, 1),
-                align_corners=False,
-            ).squeeze(1)
+            if not use_ds:
+                point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
+                # # get gt labels
+                tgt_mask = point_sample(
+                    tgt_mask,
+                    point_coords.repeat(tgt_mask.shape[0], 1, 1),
+                    align_corners=False,
+                ).squeeze(1)
 
-            out_mask = point_sample(
-                out_mask,
-                point_coords.repeat(out_mask.shape[0], 1, 1),
-                align_corners=False,
-            ).squeeze(1)
+                out_mask = point_sample(
+                    out_mask,
+                    point_coords.repeat(out_mask.shape[0], 1, 1),
+                    align_corners=False,
+                ).squeeze(1)
+            else:
+                out_mask = F.interpolate(
+                    out_mask,
+                    size=(out_mask.shape[-2] // 2, out_mask.shape[-1] // 2),
+                    mode="bilinear",
+                    align_corners=False,
+                ).view(out_mask.shape[0], -1)
 
-            # out_mask = F.interpolate(
-            #     out_mask,
-            #     size=(out_mask.shape[-2] // 2, out_mask.shape[-1] // 2),
-            #     mode="bilinear",
-            #     align_corners=False,
-            # ).view(out_mask.shape[0], -1)
-
-            # tgt_mask = F.interpolate(
-            #     tgt_mask,
-            #     size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
-            #     mode="bilinear",
-            #     align_corners=False,
-            # ).view(tgt_mask.shape[0], out_mask.shape[1])
+                tgt_mask = F.interpolate(
+                    tgt_mask,
+                    size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
+                    mode="bilinear",
+                    align_corners=False,
+                ).view(tgt_mask.shape[0], out_mask.shape[1])
 
 
             with autocast(enabled=False):
@@ -227,7 +228,7 @@ class HungarianMatcher(nn.Module):
         ]
 
     @torch.no_grad()
-    def forward(self, outputs, targets):
+    def forward(self, outputs, targets, use_ds=False):
         """Performs the matching
 
         Params:
@@ -247,7 +248,7 @@ class HungarianMatcher(nn.Module):
             For each batch element, it holds:
                 len(index_i) = len(index_j) = min(num_queries, num_target_boxes)
         """
-        return self.memory_efficient_forward(outputs, targets)
+        return self.memory_efficient_forward(outputs, targets, use_ds)
 
     def __repr__(self, _repr_indent=4):
         head = "Matcher " + self.__class__.__name__
@@ -258,6 +259,209 @@ class HungarianMatcher(nn.Module):
         ]
         lines = [head] + [" " * _repr_indent + line for line in body]
         return "\n".join(lines)
+
+
+class HungarianMatcher_Mask(nn.Module):
+    """This class computes an assignment between the targets and the predictions of the network
+
+    For efficiency reasons, the targets don't include the no_object. Because of this, in general,
+    there are more predictions than targets. In this case, we do a 1-to-1 matching of the best predictions,
+    while the others are un-matched (and thus treated as non-objects).
+    """
+
+    def __init__(self, cost_class: float = 1, cost_mask: float = 1, cost_dice: float = 1, num_points: int = 0):
+        """Creates the matcher
+
+        Params:
+            cost_class: This is the relative weight of the classification error in the matching cost
+            cost_mask: This is the relative weight of the focal loss of the binary mask in the matching cost
+            cost_dice: This is the relative weight of the dice loss of the binary mask in the matching cost
+        """
+        super().__init__()
+        self.cost_class = cost_class
+        self.cost_mask = cost_mask
+        self.cost_dice = cost_dice
+
+        assert cost_class != 0 or cost_mask != 0 or cost_dice != 0, "all costs cant be 0"
+        self.cnt = 0
+        self.num_points = num_points
+
+    @torch.no_grad()
+    def memory_efficient_forward(self, outputs, targets, use_ds=False):
+        """More memory-friendly matching"""
+        bs, num_queries = outputs["pred_logits"].shape[:2]
+
+        indices = []
+        indices_class = []
+        # Iterate through batch size
+        for b in range(bs):
+
+            out_prob = outputs["pred_logits"][b].softmax(-1)  # [num_queries, num_classes]
+            # pred = []
+            # pred_prob = []
+            # for i in range(out_prob.shape[0]):
+            #     ma = out_prob[i, -1]
+            #     Id = 80
+            #     for j in range(out_prob.shape[1]):
+            #         if ma < out_prob[i][j]:
+            #             ma = out_prob[i][j]
+            #             Id = j
+            #     if Id != 80:
+            #         pred.append(i)
+            #         pred_prob.append(ma)
+            tgt_ids = targets[b]["labels"]
+
+            # Compute the classification cost. Contrary to the loss, we don't use the NLL,
+            # but approximate it in 1 - proba[target class].
+            # The 1 is a constant that doesn't change the matching, it can be ommitted.
+            cost_class = -out_prob[:, tgt_ids]
+
+            out_mask = outputs["pred_masks"][b]  # [num_queries, H_pred, W_pred]
+            # tmp_mask = out_mask.sigmoid().cpu().numpy()
+            # gt masks are already padded when preparing target
+            tgt_mask = targets[b]["masks"].to(out_mask)
+
+            out_mask = out_mask[:, None]
+            tgt_mask = tgt_mask[:, None]
+
+            out_mask = out_mask.float()
+            tgt_mask = tgt_mask.float()
+            # # all masks share the same set of points for efficient matching!
+            if not use_ds:
+                point_coords = torch.rand(1, self.num_points, 2, device=out_mask.device)
+                # # get gt labels
+                tgt_mask = point_sample(
+                    tgt_mask,
+                    point_coords.repeat(tgt_mask.shape[0], 1, 1),
+                    align_corners=False,
+                ).squeeze(1)
+
+                out_mask = point_sample(
+                    out_mask,
+                    point_coords.repeat(out_mask.shape[0], 1, 1),
+                    align_corners=False,
+                ).squeeze(1)
+            else:
+                out_mask = F.interpolate(
+                    out_mask,
+                    size=(out_mask.shape[-2] // 2, out_mask.shape[-1] // 2),
+                    mode="bilinear",
+                    align_corners=False,
+                ).view(out_mask.shape[0], -1)
+
+                tgt_mask = F.interpolate(
+                    tgt_mask,
+                    size=(tgt_mask.shape[-2] // 8, tgt_mask.shape[-1] // 8),
+                    mode="bilinear",
+                    align_corners=False,
+                ).view(tgt_mask.shape[0], out_mask.shape[1])
+
+
+            with autocast(enabled=False):
+                out_mask = out_mask.float()
+                tgt_mask = tgt_mask.float()
+                # Compute the focal loss between masks
+                cost_mask = batch_sigmoid_ce_loss_jit(out_mask, tgt_mask)
+
+                # Compute the dice loss betwen masks
+                cost_dice = batch_dice_loss_jit(out_mask, tgt_mask)
+            
+            # Final cost matrix
+
+            # C_mask = (
+            #     self.cost_mask * cost_mask
+            # )
+            # C_Dice = (
+            #     self.cost_dice * cost_dice
+            # )
+            # C_class = (
+            #     self.cost_class * cost_class
+            # )
+            C = (
+                self.cost_mask * cost_mask
+                + self.cost_dice * cost_dice
+            )
+            C_class = (
+                cost_class
+            )
+            C_class = C_class.reshape(num_queries, -1).cpu()
+            indices_class.append(linear_sum_assignment(C_class))
+
+
+            C = C.reshape(num_queries, -1).cpu()
+            # C_mask = C_mask.reshape(num_queries, -1).cpu().numpy()
+            # C_Dice = C_Dice.reshape(num_queries, -1).cpu().numpy()
+            # C_class = C_class.reshape(num_queries, -1).cpu().numpy()
+            # np.set_printoptions(precision=2, suppress=True)
+            # out_mask = out_mask.cpu().numpy()
+            # tgt_mask = tgt_mask.cpu().numpy()
+            # print('out_mask', out_mask)
+            # print('tgt_mask', tgt_mask)
+            # print('Cost mask', C_mask)
+            # print('Cost dice', C_Dice)
+            # print('Cost class', C_class)
+            # print('indices', linear_sum_assignment(C))
+
+            # dicepred = []
+            # for i in range(C_Dice.shape[0]):
+            #     ma = 1000
+            #     for j in range(C_Dice.shape[1]):
+            #         ma = min(ma, C_Dice[i][j])
+            #     if 1 - ma / 5 > 0.8:
+            #         dicepred.append(i) 
+            # print('dice pred', dicepred)
+            # print('class pred', pred)
+            # print('pred_prob', pred_prob)
+            # save_path = "/root/workspace/detectron2_all/Mask2Former-ori/visual/"
+            # self.cnt += 1
+            # if self.cnt <= 1:
+            #     for i in pred:
+            #         io.imsave(save_path + 'pred' + str(i) + '.png', (tmp_mask[i]*255).astype(np.uint8))
+            indices.append(linear_sum_assignment(C))
+
+        return [
+            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            for i, j in indices
+        ],[
+            (torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64))
+            for i, j in indices_class
+        ]
+
+    @torch.no_grad()
+    def forward(self, outputs, targets, use_ds=False):
+        """Performs the matching
+
+        Params:
+            outputs: This is a dict that contains at least these entries:
+                 "pred_logits": Tensor of dim [batch_size, num_queries, num_classes] with the classification logits
+                 "pred_masks": Tensor of dim [batch_size, num_queries, H_pred, W_pred] with the predicted masks
+
+            targets: This is a list of targets (len(targets) = batch_size), where each target is a dict containing:
+                 "labels": Tensor of dim [num_target_boxes] (where num_target_boxes is the number of ground-truth
+                           objects in the target) containing the class labels
+                 "masks": Tensor of dim [num_target_boxes, H_gt, W_gt] containing the target masks
+
+        Returns:
+            A list of size batch_size, containing tuples of (index_i, index_j) where:
+                - index_i is the indices of the selected predictions (in order)
+                - index_j is the indices of the corresponding selected targets (in order)
+            For each batch element, it holds:
+                len(index_i) = len(index_j) = min(num_queries, num_target_boxes)
+        """
+        return self.memory_efficient_forward(outputs, targets, use_ds)
+
+    def __repr__(self, _repr_indent=4):
+        head = "Matcher " + self.__class__.__name__
+        body = [
+            "cost_class: {}".format(self.cost_class),
+            "cost_mask: {}".format(self.cost_mask),
+            "cost_dice: {}".format(self.cost_dice),
+        ]
+        lines = [head] + [" " * _repr_indent + line for line in body]
+        return "\n".join(lines)
+
+
+
 
 class HungarianMatcher_Decouple(nn.Module):
     """This class computes an assignment between the targets and the predictions of the network
