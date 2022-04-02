@@ -66,18 +66,20 @@ def dice_loss_jit(
     b = target_classes[pos].long()
     # print(a, b)
     #     # positive goes to bbox quality
-    pt = iou - src_logits[a, b]
-
+    pt = iou - src_logits[a, b].sigmoid()
+    # print(pt.pow(beta))
     # print(src_logits[a,b])
     # print(iou)
     # print(loss_qfl[a, b])
     loss_qfl[a, b] = F.binary_cross_entropy_with_logits(
         src_logits[a,b], iou, reduction='none') * pt.pow(beta)
-
+    # print(src_logits[a,b].sigmoid())
+    # print(iou)
+    # print(loss_qfl[a, b])
     # print('src_score', src_iou)
     # print(iou)
     # loss_iou = F.mse_loss(src_iou, iou, reduction='none') #[matcher]
-    return loss.sum() / num_masks, loss_qfl.mean()
+    return loss.sum() / num_masks, loss_qfl.mean(1).sum() / num_masks
 
 
 # dice_loss_jit = torch.jit.script(dice_loss)  # type: torch.jit.ScriptModule
@@ -271,7 +273,7 @@ class SetCriterion(nn.Module):
         losses = {
             "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
             "loss_dice": loss_dice,
-            "loss_iou" : loss_iou,
+            "loss_iou" : loss_iou * src_logits.shape[1],
         }
 
         del src_masks
