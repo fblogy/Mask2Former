@@ -33,7 +33,8 @@ from .maskformer_model_maskmatcher import MaskFormerMaskMatcher
 from .maskformer_model_decouplepos import MaskFormerDecouplePos
 from .maskformer_model_aligniou import MaskFormerAlignIou
 from .maskformer_model_GFocalLoss import MaskFormerGFL
-
+from .maskformer_model_matchermoremask import MaskFormerMatchermoremask
+from .maskformer_model_matchernext import MaskFormerMatchernext
 
 from .maskformer_model_direction import MaskFormerDirection
 from .test_time_augmentation import SemanticSegmentorWithTTA
