@@ -36,7 +36,7 @@ from .maskformer_model_GFocalLoss import MaskFormerGFL
 from .maskformer_model_matchermoremask import MaskFormerMatchermoremask
 from .maskformer_model_matchernext import MaskFormerMatchernext
 from .maskformer_model_mutualmatcher import MaskFormerMutualMatcher
-
+from .maskformer_model_mutualmatcheraux import MaskFormerMutualMatcherAux
 
 from .maskformer_model_direction import MaskFormerDirection
 from .test_time_augmentation import SemanticSegmentorWithTTA
