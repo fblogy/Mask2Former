@@ -54,12 +54,17 @@ def dice_loss_jit(
         
     # neg = target_classes == 80
 
-    k = 1 / (0.95**2 - 0.5**2)
+    k = -1 / (0.95**2 - 0.5**2)
     b = 1 - k * (0.5 ** 2)
+    # print(k, b)
+    # print(0.94*0.94*k + b)
+    # print('qiou', qiou)
     negweight = (qiou * k + b)
     negweight[qiou > 0.95] = 0
+    negweight[qiou < 0.5] = 1
     negweight = negweight.view(-1)
     # print(negweight.shape)
+    # print('negweight', negweight)
     negweight = negweight[:, None].repeat(1, src_logits.shape[-1])
     # print(negweight.shape)
 
