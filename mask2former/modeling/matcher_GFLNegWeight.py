@@ -167,7 +167,7 @@ class HungarianMatcher(nn.Module):
                 # Compute the dice loss betwen masks
                 cost_dice, iou = batch_dice_loss_jit(out_mask, tgt_mask)
                 if (cost_dice.shape[1] > 0):
-                    qiou[b] = torch.min(iou, dim = 1)[0]
+                    qiou[b] = torch.max(iou, dim = 1)[0]
             # Final cost matrix
 
             # C_mask = (
