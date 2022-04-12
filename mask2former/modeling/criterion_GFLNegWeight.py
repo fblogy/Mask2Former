@@ -59,14 +59,18 @@ def dice_loss_jit(
     # print(k, b)
     # print(0.94*0.94*k + b)
     # print('qiou', qiou)
-    negweight = (qiou * k + b)
+    # qiou[qiou < 0.93] = 0.93
+    negweight = (qiou * qiou * k + b)
     negweight[qiou > 0.95] = 0
     negweight[qiou < 0.5] = 1
     negweight = negweight.view(-1)
+    # print('qiou', qiou)
+    # print('negweight', negweight)
     # print(negweight.shape)
     # print('negweight', negweight)
     negweight = negweight[:, None].repeat(1, src_logits.shape[-1])
     # print(negweight.shape)
+
 
     pred = src_logits
     pt = pred.sigmoid()
@@ -75,6 +79,7 @@ def dice_loss_jit(
     # print(zerolabel)
     loss_qfl = F.binary_cross_entropy_with_logits(
         pred, zerolabel, reduction='none') * pt.pow(beta) * negweight
+
     # print(loss_qfl.shape)
     pos = (target_classes < 80).nonzero().squeeze(1)
     a = pos
