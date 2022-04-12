@@ -64,7 +64,12 @@ def dice_loss_jit(
     negweight[qiou > 0.95] = 0
     negweight[qiou < 0.5] = 1
     negweight = negweight.view(-1)
+    # negweight2 = (qiou * k + b)
+    # negweight2[qiou > 0.95] = 0
+    # negweight2[qiou < 0.5] = 1
+    # negweight2 = negweight2.view(-1)
     # print('qiou', qiou)
+    # print('negweight2', negweight2)
     # print('negweight', negweight)
     # print(negweight.shape)
     # print('negweight', negweight)
@@ -81,18 +86,19 @@ def dice_loss_jit(
         pred, zerolabel, reduction='none') * pt.pow(beta) * negweight
 
     # print(loss_qfl.shape)
+    iou_d = iou.clone().detach()
     pos = (target_classes < 80).nonzero().squeeze(1)
     a = pos
     b = target_classes[pos].long()
     # print(a, b)
     #     # positive goes to bbox quality
-    pt = iou - src_logits[a, b].sigmoid()
+    pt = iou_d - src_logits[a, b].sigmoid()
     # print(pt.pow(beta))
     # print(src_logits[a,b])
     # print(iou)
     # print(loss_qfl[a, b])
     loss_qfl[a, b] = F.binary_cross_entropy_with_logits(
-        src_logits[a,b], iou, reduction='none') * pt.pow(beta)
+        src_logits[a,b], iou_d, reduction='none') * pt.pow(beta)
     # print(src_logits[a,b].sigmoid())
     # print(iou)
     # print(loss_qfl[a, b])
@@ -101,9 +107,9 @@ def dice_loss_jit(
     # loss_iou = F.mse_loss(src_iou, iou, reduction='none') #[matcher]
     # print(iou.shape)
     # print(loss.shape)
-    iou_d = iou.clone().detach()
-    iou_d[iou_d < 2] = 1
-    return loss / num_masks, loss_qfl.mean(1).sum() / num_masks, iou_d
+    iou_2 = iou.clone().detach()
+    iou_2[iou_2 < 2] = 1
+    return loss / num_masks, loss_qfl.mean(1).sum() / num_masks, iou_2
 
 
 # dice_loss_jit = torch.jit.script(dice_loss)  # type: torch.jit.ScriptModule
