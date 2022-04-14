@@ -532,7 +532,8 @@ class MultiScaleMaskedTransformerDecoderAlignmaskAttentionSigmoid(MultiScaleTran
 
         outputs_alignweight = self.alignweight(decoder_output_class) #[B, N, N]
         outputs_alignweight = outputs_alignweight.sigmoid()
-        outputs_alignweight_norm = outputs_alignweight / (outputs_alignweight.clone().detach().sum(dim = -1) + 1e-6)
+        # print(outputs_alignweight.clone().detach().sum(dim = -1).shape[:, :, None])
+        outputs_alignweight_norm = outputs_alignweight / (outputs_alignweight.clone().detach().sum(dim = -1)[:, :, None] + 1e-6)
         # print(outputs_alignweight.shape)
         outputs_alignmask = torch.einsum("bql,blhw->bqhw", outputs_alignweight_norm, outputs_mask)
 
