@@ -343,7 +343,7 @@ class SetCriterion(nn.Module):
         ).squeeze(1)
 
         loss_dice, loss_iou, iou = dice_loss_jit(point_logits, point_labels, src_logits, target_classes, num_masks, qiou)
-
+        loss_mask = (sigmoid_ce_loss_jit(point_logits, point_labels, num_masks) * iou).sum()
 
 
 
@@ -388,7 +388,7 @@ class SetCriterion(nn.Module):
 
 
         losses = {
-            "loss_mask": (sigmoid_ce_loss_jit(point_logits, point_labels, num_masks) * iou).sum(),
+            "loss_mask": loss_mask,
             "loss_dice": (loss_dice * iou).sum(),
             "loss_iou" : loss_iou * src_logits.shape[1],
             "loss_midmask" : sigmoid_ce_loss_jit2(point_logits, point_labels, num_masks),
