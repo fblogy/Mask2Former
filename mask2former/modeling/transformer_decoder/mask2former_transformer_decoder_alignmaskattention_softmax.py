@@ -209,7 +209,7 @@ class MLP(nn.Module):
 
 
 @TRANSFORMER_DECODER_REGISTRY.register()
-class MultiScaleTransformerDecoderAlignmaskAttention(nn.Module):
+class MultiScaleTransformerDecoderAlignmaskAttentionSoftmax(nn.Module):
 
     _version = 2
 
@@ -518,7 +518,7 @@ class MultiScaleTransformerDecoderAlignmaskAttention(nn.Module):
 
 
 @TRANSFORMER_DECODER_REGISTRY.register()
-class MultiScaleMaskedTransformerDecoderAlignmaskAttention(MultiScaleTransformerDecoderAlignmaskAttention):
+class MultiScaleMaskedTransformerDecoderAlignmaskAttentionSoftmax(MultiScaleTransformerDecoderAlignmaskAttentionSoftmax):
 
     def forward_prediction_heads(self, output, mask_features, attn_mask_target_size, output_class):
         decoder_output = self.decoder_norm(output)
