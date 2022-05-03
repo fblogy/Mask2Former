@@ -46,7 +46,7 @@ def dice_loss_jit(
     # print(src_iou.sigmoid()[:, 0])
     # print(iou)
     # print(iou)
-    src_logits = src_logits.view(-1, src_logits.shape[-1]) #[M, 80]
+    src_logits = src_logits.reshape(-1, src_logits.shape[-1]) #[M, 80]
     target_classes = target_classes.flatten(0) #[M]
 
     # print(src_logits.shape)
