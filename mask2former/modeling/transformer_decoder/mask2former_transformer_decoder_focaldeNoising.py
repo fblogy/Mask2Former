@@ -486,7 +486,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
             #     print(output)
             if targets != None:
                 SA_tgt_mask = torch.zeros((bs, output.shape[0], output.shape[0]), device=output.device)
-                SA_tgt_mask[:, : , 100 : ] = 1
+                SA_tgt_mask[:, : 100, 100 : ] = 1
                 # SA_tgt_mask[:, 100 : , : ] = True
                 SA_tgt_mask = SA_tgt_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1).detach()
                 SA_tgt_mask = SA_tgt_mask == 1
