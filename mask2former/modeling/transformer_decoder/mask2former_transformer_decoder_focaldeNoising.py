@@ -45,6 +45,7 @@ class SelfAttentionLayer(nn.Module):
                      tgt_mask: Optional[Tensor] = None,
                      tgt_key_padding_mask: Optional[Tensor] = None,
                      query_pos: Optional[Tensor] = None):
+        # print('tgt_mask', tgt_mask)
         q = k = self.with_pos_embed(tgt, query_pos)
         tgt2 = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout(tgt2)
@@ -103,6 +104,8 @@ class CrossAttentionLayer(nn.Module):
                      memory_key_padding_mask: Optional[Tensor] = None,
                      pos: Optional[Tensor] = None,
                      query_pos: Optional[Tensor] = None):
+        # print('memory_mask', memory_mask)
+        # print('key_padding_mask', memory_key_padding_mask)
         tgt2 = self.multihead_attn(
             query=self.with_pos_embed(tgt, query_pos),
             key=self.with_pos_embed(memory, pos),
@@ -483,14 +486,25 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
             #     print(output)
             if targets != None:
                 SA_tgt_mask = torch.zeros((bs, output.shape[0], output.shape[0]), device=output.device)
-                SA_tgt_mask[:, : 100, 100 : ] = True
+                SA_tgt_mask[:, : , 100 : ] = 1
+                # SA_tgt_mask[:, 100 : , : ] = True
                 SA_tgt_mask = SA_tgt_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1).detach()
+                SA_tgt_mask = SA_tgt_mask == 1
+                # print(SA_tgt_mask.dtype)
             else:
                 SA_tgt_mask = None
             # print(SA_tgt_mask.shape)
             # print(output.shape[0])
+
+            # output_NoDN = self.transformer_self_attention_layers[i](
+            #     output[:100], tgt_mask=None, tgt_key_padding_mask=None, query_pos=query_embed[:100])
+
             output = self.transformer_self_attention_layers[i](
                 output, tgt_mask=SA_tgt_mask, tgt_key_padding_mask=None, query_pos=query_embed)
+
+            # print(torch.sum(output_NoDN - output[:100]))
+            # print('output_NoDN', output_NoDN[0])
+            # print('output', output[0])
 
             # FFN
             output = self.transformer_ffn_layers[i](output)
