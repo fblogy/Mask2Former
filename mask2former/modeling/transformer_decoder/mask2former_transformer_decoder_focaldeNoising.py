@@ -320,7 +320,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
         # learnable query features
         self.query_feat = nn.Embedding(num_queries, hidden_dim)
         # learnable query p.e.
-        self.query_embed = nn.Embedding(num_queries * 2, hidden_dim)
+        self.query_embed = nn.Embedding(num_queries + 100, hidden_dim)
 
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
@@ -454,7 +454,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
             output = torch.cat((output, dn_feats_proj.permute(1, 0, 2)), dim = 0)
         else:
-            query_embed = self.query_embed.weight[:100].unsqueeze(1).repeat(1, bs, 1)
+            query_embed = self.query_embed.weight[:self.num_queries].unsqueeze(1).repeat(1, bs, 1)
             output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
         # print(output.shape)
         predictions_class = []
@@ -486,7 +486,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
             #     print(output)
             if targets != None:
                 SA_tgt_mask = torch.zeros((bs, output.shape[0], output.shape[0]), device=output.device)
-                SA_tgt_mask[:, : 100, 100 : ] = 1
+                SA_tgt_mask[:, : self.num_queries, self.num_queries : ] = 1
                 # SA_tgt_mask[:, 100 : , : ] = True
                 SA_tgt_mask = SA_tgt_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1).detach()
                 SA_tgt_mask = SA_tgt_mask == 1

@@ -241,11 +241,11 @@ class SetCriterion(nn.Module):
         """
         assert "pred_masks" in outputs
         # assert "pred_ious" in outputs
-
+        num_queries = outputs["pred_logits"].shape[1] - 100
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
 
-        src_logits = outputs["pred_logits"][:, :100] #[B, N, 1]
+        src_logits = outputs["pred_logits"][:, :num_queries] #[B, N, 1]
         
 
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
@@ -324,14 +324,14 @@ class SetCriterion(nn.Module):
         src_idx = self._get_src_permutation_idx(indices_DN)
         tgt_idx = self._get_tgt_permutation_idx(indices_DN)
 
-        src_logits = outputs["pred_logits"][:, 100: ] #[B, N, 1]
+        src_logits = outputs["pred_logits"][:, num_queries: ] #[B, N, 1]
         
 
         target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices_DN)])
         target_classes = torch.full(
             src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
         )
-        src_idx_class = (src_idx[0], src_idx[1] - 100)
+        src_idx_class = (src_idx[0], src_idx[1] - num_queries)
         target_classes[src_idx_class] = target_classes_o #[B, N]
 
 

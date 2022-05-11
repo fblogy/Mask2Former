@@ -90,7 +90,7 @@ class HungarianMatcher(nn.Module):
     def memory_efficient_forward(self, outputs, targets, use_ds=False):
         """More memory-friendly matching"""
         bs, num_queries = outputs["pred_logits"].shape[:2]
-        num_queries = 100
+        num_queries = num_queries - 100
         indices = []
         indices_class = []
         qiou = torch.zeros((bs, num_queries)).cuda()
@@ -99,7 +99,7 @@ class HungarianMatcher(nn.Module):
         # Iterate through batch size
         for b in range(bs):
             num_mask = num_masks[b]
-            out_prob = outputs["pred_logits"][b].sigmoid()[:100]  # [num_queries, num_classes]
+            out_prob = outputs["pred_logits"][b].sigmoid()[:num_queries]  # [num_queries, num_classes]
             # print(233)
             # pred = []
             # pred_prob = []
@@ -120,7 +120,7 @@ class HungarianMatcher(nn.Module):
             # The 1 is a constant that doesn't change the matching, it can be ommitted.
             cost_class = -out_prob[:, tgt_ids]
 
-            out_mask = outputs["pred_masks"][b][:100]  # [num_queries, H_pred, W_pred]
+            out_mask = outputs["pred_masks"][b][:num_queries]  # [num_queries, H_pred, W_pred]
             # tmp_mask = out_mask.sigmoid().cpu().numpy()
             # gt masks are already padded when preparing target
             tgt_mask = targets[b]["masks"].to(out_mask)
