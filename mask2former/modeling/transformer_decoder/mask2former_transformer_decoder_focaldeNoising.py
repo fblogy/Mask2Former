@@ -400,7 +400,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
         _, bs, _ = src[0].shape
 
-        rt = 1
+        rt = 5
 
         if targets != None:
             # masks = [t["masks"] for t in targets]
@@ -410,7 +410,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
             # target_masks = target_masks.to(mask_features.device) #[B, N, H, W]
             # print(target_masks.shape)
             # print(mask_features.shape)
-            bs, num_DNQ, C = mask_features.shape[0], 100, 256
+            bs, num_DNQ, C = mask_features.shape[0], 50, 256
             dn_feats = torch.zeros((bs, num_DNQ, C), device=mask_features.device)
             for b in range(bs):
                 num_mask = num_masks[b]

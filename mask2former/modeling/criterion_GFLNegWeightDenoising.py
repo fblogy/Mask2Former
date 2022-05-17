@@ -241,7 +241,8 @@ class SetCriterion(nn.Module):
         """
         assert "pred_masks" in outputs
         # assert "pred_ious" in outputs
-        num_queries = outputs["pred_logits"].shape[1] - 100
+        num_DQN = 50
+        num_queries = outputs["pred_logits"].shape[1] - num_DQN
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
 

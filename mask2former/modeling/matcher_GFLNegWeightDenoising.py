@@ -90,8 +90,8 @@ class HungarianMatcher(nn.Module):
     def memory_efficient_forward(self, outputs, targets, use_ds=False):
         """More memory-friendly matching"""
         bs, num_queries = outputs["pred_logits"].shape[:2]
-        num_DNQ = 100
-        rt = 1
+        num_DNQ = 50
+        rt = 5
         num_queries = num_queries - num_DNQ
         indices = []
         indices_class = []
