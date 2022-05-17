@@ -400,6 +400,8 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
         _, bs, _ = src[0].shape
 
+        rt = 1
+
         if targets != None:
             # masks = [t["masks"] for t in targets]
             num_masks = [len(t["labels"]) for t in targets]
@@ -413,9 +415,9 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
             for b in range(bs):
                 num_mask = num_masks[b]
                 cnt = 0
-                for i in range(5):
+                for i in range(rt):
                     cnt += num_mask
-                    ma = min(cnt, 100)
+                    ma = min(cnt, num_DNQ)
                     point_coords = torch.rand(1, self.num_points, 2, device=mask_features.device)
                     # get gt labels
 
@@ -442,14 +444,14 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
                     # print(tgt_mask.shape)
                     # print(DN_feat.shape)
                     dn_feats[b, cnt-num_mask:ma, :] = DN_feat[: ma - (cnt - num_mask), :]
-                    if cnt >= 100:
+                    if cnt >= num_DNQ:
                         break
             dn_feats_norm = self.decoder_norm(dn_feats)
             dn_feats_proj = self.dn_embed(dn_feats_norm)
 
 
             # QxNxC
-            query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)
+            query_embed = self.query_embed.weight[:self.num_queries + num_DNQ].unsqueeze(1).repeat(1, bs, 1)
             output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
 
             output = torch.cat((output, dn_feats_proj.permute(1, 0, 2)), dim = 0)

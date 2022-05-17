@@ -90,7 +90,9 @@ class HungarianMatcher(nn.Module):
     def memory_efficient_forward(self, outputs, targets, use_ds=False):
         """More memory-friendly matching"""
         bs, num_queries = outputs["pred_logits"].shape[:2]
-        num_queries = num_queries - 100
+        num_DNQ = 100
+        rt = 1
+        num_queries = num_queries - num_DNQ
         indices = []
         indices_class = []
         qiou = torch.zeros((bs, num_queries)).cuda()
@@ -212,18 +214,18 @@ class HungarianMatcher(nn.Module):
             cnt = 0
             s1 = []
             s2 = []
-            for i in range(5):
+            for i in range(rt):
                 cnt += num_mask
-                ma = min(cnt, 100)
+                ma = min(cnt, num_DNQ)
                 id2 = 0
                 for j in range(cnt - num_mask, ma):
-                    s1.append(j + 100)
+                    s1.append(j + num_queries)
                     s2.append(id2)
                     id2 += 1
                 
-                if (cnt >= 100):
+                if (cnt >= num_DNQ):
                     break
-            assert(len(s1) <= 100)
+            assert(len(s1) <= num_DNQ)
             # dicepred = []
             # for i in range(C_Dice.shape[0]):
             #     ma = 1000
