@@ -289,6 +289,10 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
         self.transformer_cross_attention_layers = nn.ModuleList()
         self.transformer_ffn_layers = nn.ModuleList()
 
+        self.transformer_self_attention_layers_DN = nn.ModuleList()
+        self.transformer_cross_attention_layers_DN = nn.ModuleList()
+        self.transformer_ffn_layers_DN = nn.ModuleList()
+
         for _ in range(self.num_layers):
             self.transformer_self_attention_layers.append(
                 SelfAttentionLayer(
@@ -313,6 +317,30 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
                     dropout=0.0,
                     normalize_before=pre_norm,
                 ))
+            self.transformer_self_attention_layers_DN.append(
+                SelfAttentionLayer(
+                    d_model=hidden_dim,
+                    nhead=nheads,
+                    dropout=0.0,
+                    normalize_before=pre_norm,
+                ))
+
+            self.transformer_cross_attention_layers_DN.append(
+                CrossAttentionLayer(
+                    d_model=hidden_dim,
+                    nhead=nheads,
+                    dropout=0.0,
+                    normalize_before=pre_norm,
+                ))
+
+            self.transformer_ffn_layers_DN.append(
+                FFNLayer(
+                    d_model=hidden_dim,
+                    dim_feedforward=dim_feedforward,
+                    dropout=0.0,
+                    normalize_before=pre_norm,
+                ))
+
 
         self.decoder_norm = nn.LayerNorm(hidden_dim)
 
@@ -475,42 +503,55 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
+            # print(attn_mask.shape) #[head, num_queries, H*W]
             # attention: cross-attention first
-            output = self.transformer_cross_attention_layers[i](
-                output,
+            output_MT = output[:self.num_queries]
+            output_DN = output[self.num_queries:]
+            output_MT = self.transformer_cross_attention_layers[i](
+                output_MT,
                 src[level_index],
-                memory_mask=attn_mask,
+                memory_mask=attn_mask[:,:self.num_queries,:],
                 # memory_mask=None,
                 memory_key_padding_mask=None,  # here we do not apply masking on padded region
                 pos=pos[level_index],
-                query_pos=query_embed)
+                query_pos=query_embed[:self.num_queries])
+            output_DN = self.transformer_cross_attention_layers_DN[i](
+                output_DN,
+                src[level_index],
+                memory_mask=attn_mask[:,self.num_queries:,:],
+                # memory_mask=None,
+                memory_key_padding_mask=None,  # here we do not apply masking on padded region
+                pos=pos[level_index],
+                query_pos=query_embed[self.num_queries:])    
             # if i == 0:
             #     print(output)
-            if targets != None:
-                SA_tgt_mask = torch.zeros((bs, output.shape[0], output.shape[0]), device=output.device)
-                SA_tgt_mask[:, : self.num_queries, self.num_queries : ] = 1
-                # SA_tgt_mask[:, 100 : , : ] = True
-                SA_tgt_mask = SA_tgt_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1).detach()
-                SA_tgt_mask = SA_tgt_mask == 1
-                # print(SA_tgt_mask.dtype)
-            else:
-                SA_tgt_mask = None
+            # if targets != None:
+            #     SA_tgt_mask = torch.zeros((bs, output.shape[0], output.shape[0]), device=output.device)
+            #     SA_tgt_mask[:, : self.num_queries, self.num_queries : ] = 1
+            #     # SA_tgt_mask[:, 100 : , : ] = True
+            #     SA_tgt_mask = SA_tgt_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1).flatten(0, 1).detach()
+            #     SA_tgt_mask = SA_tgt_mask == 1
+            #     # print(SA_tgt_mask.dtype)
+            # else:
+            #     SA_tgt_mask = None
             # print(SA_tgt_mask.shape)
             # print(output.shape[0])
 
             # output_NoDN = self.transformer_self_attention_layers[i](
             #     output[:100], tgt_mask=None, tgt_key_padding_mask=None, query_pos=query_embed[:100])
 
-            output = self.transformer_self_attention_layers[i](
-                output, tgt_mask=SA_tgt_mask, tgt_key_padding_mask=None, query_pos=query_embed)
-
+            output_MT = self.transformer_self_attention_layers[i](
+                output_MT, tgt_mask=None, tgt_key_padding_mask=None, query_pos=query_embed[:self.num_queries])
+            output_DN = self.transformer_self_attention_layers_DN[i](
+                output_DN, tgt_mask=None, tgt_key_padding_mask=None, query_pos=query_embed[self.num_queries:])
             # print(torch.sum(output_NoDN - output[:100]))
             # print('output_NoDN', output_NoDN[0])
             # print('output', output[0])
 
             # FFN
-            output = self.transformer_ffn_layers[i](output)
-
+            output_MT = self.transformer_ffn_layers[i](output_MT)
+            output_DN = self.transformer_ffn_layers_DN[i](output_DN)
+            output = torch.cat((output_MT, output_DN), dim = 0)
             outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
                 output, mask_features, attn_mask_target_size=size_list[(i + 1) % self.num_feature_levels])
             predictions_class.append(outputs_class)
