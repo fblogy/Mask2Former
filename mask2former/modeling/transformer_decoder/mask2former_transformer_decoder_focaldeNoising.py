@@ -290,7 +290,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
         self.transformer_ffn_layers = nn.ModuleList()
 
         self.transformer_self_attention_layers_DN = nn.ModuleList()
-        self.transformer_cross_attention_layers_DN = nn.ModuleList()
+        # self.transformer_cross_attention_layers_DN = nn.ModuleList()
         self.transformer_ffn_layers_DN = nn.ModuleList()
 
         for _ in range(self.num_layers):
@@ -325,13 +325,13 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
                     normalize_before=pre_norm,
                 ))
 
-            self.transformer_cross_attention_layers_DN.append(
-                CrossAttentionLayer(
-                    d_model=hidden_dim,
-                    nhead=nheads,
-                    dropout=0.0,
-                    normalize_before=pre_norm,
-                ))
+            # self.transformer_cross_attention_layers_DN.append(
+            #     CrossAttentionLayer(
+            #         d_model=hidden_dim,
+            #         nhead=nheads,
+            #         dropout=0.0,
+            #         normalize_before=pre_norm,
+            #     ))
 
             self.transformer_ffn_layers_DN.append(
                 FFNLayer(
@@ -515,7 +515,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
                 memory_key_padding_mask=None,  # here we do not apply masking on padded region
                 pos=pos[level_index],
                 query_pos=query_embed[:self.num_queries])
-            output_DN = self.transformer_cross_attention_layers_DN[i](
+            output_DN = self.transformer_cross_attention_layers[i](
                 output_DN,
                 src[level_index],
                 memory_mask=attn_mask[:,self.num_queries:,:],
