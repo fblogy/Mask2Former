@@ -318,7 +318,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
         self.num_queries = num_queries
         # learnable query features
-        self.query_feat = nn.Embedding(num_queries, hidden_dim)
+        # self.query_feat = nn.Embedding(num_queries, hidden_dim)
         # learnable query p.e.
         self.query_embed = nn.Embedding(num_queries + 100, hidden_dim)
 
