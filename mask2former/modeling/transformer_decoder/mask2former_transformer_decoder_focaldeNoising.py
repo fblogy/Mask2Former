@@ -17,7 +17,6 @@ import numpy as np
 
 from ...utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list, accuracy
 from detectron2.projects.point_rend.point_features import point_sample
-from skimage import io
 
 class SelfAttentionLayer(nn.Module):
 
@@ -319,7 +318,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
         self.num_queries = num_queries
         # learnable query features
-        # self.query_feat = nn.Embedding(num_queries, hidden_dim)
+        self.query_feat = nn.Embedding(num_queries, hidden_dim)
         # learnable query p.e.
         self.query_embed = nn.Embedding(num_queries + 100, hidden_dim)
 
@@ -343,7 +342,6 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
         self.mask_embed = MLP(hidden_dim, hidden_dim, mask_dim, 3)
         self.dn_embed = MLP(hidden_dim, hidden_dim, mask_dim, 3)
         self.num_points = 12544
-        self.imgid = 0
 
     @classmethod
     def from_config(cls, cfg, in_channels, mask_classification):
@@ -402,105 +400,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
         _, bs, _ = src[0].shape
 
-
-        # generate dense query
-        mask_features_flatten = mask_features.flatten(2).permute(2, 0, 1)
-        encoder_feature = self.decoder_norm(mask_features_flatten) #[HW,B,C]
-        encoder_feature = self.dn_embed(encoder_feature)
-        encoder_feature_norm = self.decoder_norm(encoder_feature)
-
-
-        # encoder_feature_norm = self.decoder_norm(encoder_feature).transpose(0, 1) #[B, HW, C]
-        
-        encoder_output_class = self.class_embed(encoder_feature_norm.transpose(0, 1)) #[B, HW, cls]
-
-        scores, cls = encoder_output_class.sigmoid()[:, :, :-1].max(-1) #flatten(1, 2)
-        # topk_scores, indices = torch.topk(scores, k=self.num_queries, dim=1, sorted=True)
-        # # print(scores)
-        # # exit(0)
-        # # indices = indices // self.num_classes
-        # batch_idx = torch.cat([torch.full_like(indices[i], i) for i in range(bs)])
-        # src_idx = torch.cat([indices[i] for i in range(bs)])
-        # # print((batch_idx, src_idx))
-        # # print(indices.shape)
-        # # print(encoder_feature.transpose(0, 1).shape)
-        # # cc = torch.zeros((bs, encoder_feature.shape[0]))
-        # # cc[(batch_idx, src_idx)] = 1
-        # # cc = cc.view(bs, mask_features.shape[2], mask_features.shape[3])
-        # # io.imsave("/root/workspace/detectron2_all/Mask2Former/work_dirs/selectquery_visual/" + str(self.imgid) + ".png", cc.cpu().numpy()[0] > 0.5)
-        # # self.imgid += 1
-        # output = encoder_feature.transpose(0, 1)[(batch_idx, src_idx)].view(bs, self.num_queries, -1) #[B, N, C]
-        # # print()
-        # # print(output.shape)
-        # # exit(0)
-        # output = output.transpose(0, 1)
-
-        # outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
-        #     output, mask_features, attn_mask_target_size=size_list[0])
-        num_proposal = self.num_queries * 4
-
-        topk_scores, indices = torch.topk(scores, k=num_proposal, dim=1, sorted=True)
-        batch_idx = torch.cat([torch.full_like(indices[i], i) for i in range(bs)])
-        src_idx = torch.cat([indices[i] for i in range(bs)])
-
-        encoder_feature_select = encoder_feature.transpose(0, 1)[(batch_idx, src_idx)].view(bs, num_proposal, -1)
-        encoder_feature_select_norm = self.decoder_norm(encoder_feature_select)
-        # encoder_feature_norm_select = encoder_feature_norm.transpose(0, 1)[(batch_idx, src_idx)].view(bs, num_proposal, -1) #[B, N, C]
-
-        encoder_output_mask = self.mask_embed(encoder_feature_select_norm)  #[B, N, C]  
-        mask_features_select = mask_features_flatten.transpose(0, 1)[(batch_idx, src_idx)].view(bs, num_proposal, -1) #[B, N, C]
-        overlap = torch.einsum("bqc,blc->bql", encoder_output_mask, mask_features_select) > 0
-
-        # output = output.transpose(0, 1) #[N, B, C]
-        # outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
-        # output, mask_features, attn_mask_target_size=size_list[0])
-
-        # output = torch.zeros_like([bs, ])
-        batch_idx2 = []
-        select_idx = []
-        
-        for b in range(bs):
-            cnt = 0
-            used = torch.zeros(num_proposal)
-            for i in range(num_proposal):
-                ok = True
-                for j in range(i):
-                    if used[j] == 1 and overlap[b, i, j] and overlap[b, j, i]:
-                        ok = False
-                        break
-                if ok:
-                    used[i] = 1
-                    cnt += 1
-                    batch_idx2.append(b)
-                    select_idx.append(i)
-                if cnt == self.num_queries:
-                    break
-            if cnt < self.num_queries:
-                for i in range(num_proposal):
-                    if used[i] == 0:
-                        used[i] = 1
-                        cnt += 1
-                        batch_idx2.append(b)
-                        select_idx.append(i)
-                    if cnt == self.num_queries:
-                        break
-        output = encoder_feature_select[(batch_idx2, select_idx)].view(bs, self.num_queries, -1).transpose(0, 1)              
-        # cc = torch.zeros((bs, encoder_feature.shape[0]))
-        # for j in range(src_idx.shape[0]):
-        #     if scores[batch_idx[j], src_idx[j]] == 0:
-        #         src_idx[j] = 0
-        # cc[(batch_idx, src_idx)] = 1
-        # cc = cc.view(bs, mask_features.shape[2], mask_features.shape[3])
-        # io.imsave("/root/workspace/detectron2_all/Mask2Former/work_dirs/selectqueryMDis_visual/" + str(self.imgid) + ".png", cc.cpu().numpy()[0] > 0.5)
-        # self.imgid += 1
-
-
-
-
-
-
-
-        rt = 5
+        rt = 1
 
         if targets != None:
             # masks = [t["masks"] for t in targets]
@@ -552,12 +452,12 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
             # QxNxC
             query_embed = self.query_embed.weight[:self.num_queries + num_DNQ].unsqueeze(1).repeat(1, bs, 1)
-            # output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
+            output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
 
             output = torch.cat((output, dn_feats_proj.permute(1, 0, 2)), dim = 0)
         else:
             query_embed = self.query_embed.weight[:self.num_queries].unsqueeze(1).repeat(1, bs, 1)
-            # output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
+            output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
         # print(output.shape)
         predictions_class = []
         predictions_mask = []
@@ -569,33 +469,6 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
         # prediction heads on learnable query features
         outputs_class, outputs_mask, attn_mask = self.forward_prediction_heads(
             output, mask_features, attn_mask_target_size=size_list[0])
-        
-
-        # cnt = 0
-        # used = torch.zeros(outputs_mask.shape[1])
-        # for i in range(outputs_mask.shape[1]):
-        #     # print(outputs_class.sigmoid()[:, :, :-1].max(-1)[0][0, i])
-        #     if used[i] == 0:
-        #         ci = torch.zeros_like(outputs_mask[0, 0])
-        #         ci[outputs_mask[0,i] > 0] = 1
-        #         for j in range(i + 1, outputs_mask.shape[1]):
-        #             if used[j] == 0:
-        #                 cj = torch.zeros_like(outputs_mask[0, 0])
-        #                 cj[outputs_mask[0,j] > 0] = 1
-        #                 fz = torch.sum(ci * cj)
-        #                 fm = torch.sum(ci) + torch.sum(cj) - fz
-        #                 iou = fz / fm
-        #                 # print(iou)
-        #                 if iou > 0.7:
-        #                     used[j] = 1
-        #                     cnt += 1
-        # print(cnt)
-                
-        # io.imsave("/root/workspace/detectron2_all/Mask2Former/work_dirs/selectquerydecoder0allmask_visual/" + str(self.imgid) + ".png", cc.cpu().numpy() > 0)
-        # self.imgid += 1
-
-
-
         predictions_class.append(outputs_class)
         predictions_mask.append(outputs_mask)
 
