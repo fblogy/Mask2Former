@@ -61,18 +61,19 @@ def dice_loss_jit(
     loss_qfl = F.binary_cross_entropy_with_logits(
         pred, zerolabel, reduction='none') * pt.pow(beta)
 
+    iou_d = iou.clone().detach()
     pos = (target_classes < 80).nonzero().squeeze(1)
     a = pos
     b = target_classes[pos].long()
     # print(a, b)
     #     # positive goes to bbox quality
-    pt = iou - src_logits[a, b].sigmoid()
+    pt = iou_d - src_logits[a, b].sigmoid()
     # print(pt.pow(beta))
     # print(src_logits[a,b])
     # print(iou)
     # print(loss_qfl[a, b])
     loss_qfl[a, b] = F.binary_cross_entropy_with_logits(
-        src_logits[a,b], iou, reduction='none') * pt.pow(beta)
+        src_logits[a,b], iou_d, reduction='none') * pt.pow(beta)
     # print(src_logits[a,b].sigmoid())
     # print(iou)
     # print(loss_qfl[a, b])
