@@ -400,7 +400,7 @@ class MultiScaleTransformerDecoderFocalDeNoising(nn.Module):
 
         _, bs, _ = src[0].shape
 
-        rt = 1
+        rt = 5
 
         if targets != None:
             # masks = [t["masks"] for t in targets]
