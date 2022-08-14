@@ -90,6 +90,7 @@ def dice_loss_jit(
 
     # print(loss_qfl.shape)
     iou_d = iou.clone().detach()
+    iou_d[iou_d < 1] = 1
     pos = (target_classes < 80).nonzero().squeeze(1)
     a = pos
     b = target_classes[pos].long()
