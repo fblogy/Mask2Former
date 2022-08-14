@@ -86,7 +86,7 @@ def dice_loss_jit(
     # print(pred)
     # print(zerolabel)
     loss_qfl = F.binary_cross_entropy_with_logits(
-        pred, zerolabel, reduction='none') * pt.pow(beta) # * negweight
+        pred, zerolabel, reduction='none') #* pt.pow(beta) # * negweight
 
     # print(loss_qfl.shape)
     iou_d = iou.clone().detach()
@@ -104,7 +104,7 @@ def dice_loss_jit(
     # print(iou)
     # print(loss_qfl[a, b])
     loss_qfl[a, b] = F.binary_cross_entropy_with_logits(
-        src_logits[a,b], iou_d, reduction='none') * pt.pow(beta)
+        src_logits[a,b], iou_d, reduction='none') #* pt.pow(beta)
     # print(src_logits[a,b].sigmoid())
     # print(iou)
     # print(loss_qfl[a, b])
