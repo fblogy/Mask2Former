@@ -330,9 +330,9 @@ class MultiScaleTransformerDecoderFocal(nn.Module):
         # output FFNs
         if self.mask_classification:
             self.class_embed = nn.Linear(hidden_dim, num_classes+1)
-            prior_prob = 0.01
-            bias_value = -math.log((1 - prior_prob) / prior_prob)
-            self.class_embed.bias.data = torch.ones(num_classes+1) * bias_value
+            # prior_prob = 0.01
+            # bias_value = -math.log((1 - prior_prob) / prior_prob)
+            # self.class_embed.bias.data = torch.ones(num_classes+1) * bias_value
         self.mask_embed = MLP(hidden_dim, hidden_dim, mask_dim, 3)
 
     @classmethod
